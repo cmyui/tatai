@@ -2,24 +2,29 @@
 namespace slider_body_neg {
 
 	struct alignas(32) _NEGATIVE_INFO {
+
 		std::array<u8, 16> shuf;
 
 		u32 consumed;
 		u8 padding0[4];
 		int sign_x, sign_y;
-		//int sign_x;
-		//int sign_y;
-		//u8 padding[4]{};
+
 	};
 
 	static_assert(sizeof(_NEGATIVE_INFO) == 32);
+	
 
 	constexpr auto NEGATIVE_INFO = [] {
 
+		struct _negative_info_tables {
 			std::array<_NEGATIVE_INFO, 128> table{};
+			std::array<u32, 128> validation{};
+		} output{};
 
-			for (auto& v : table)
+			for (auto& v : output.table)
 				v.consumed = (u32(16) << 24) | 1;
+			for (auto& v : output.validation)
+				v = u32(-1);
 
 
 			for (u32 x_len{ 1 }; x_len < 4; ++x_len) {
@@ -48,9 +53,13 @@ namespace slider_body_neg {
 							if (y_neg)
 								neg_bits |= 1u << (colon + 1u);
 
-							const u32 key = pext_constexpr(first2 | neg_bits, 0b110111101);
+							const u32 key_in{ first2 | neg_bits };
 
-							auto& e = table[key];
+							const u32 key = pext_constexpr(key_in, 0b110111101);
+
+							output.validation[key] = key_in;
+
+							auto& e = output.table[key];
 
 							for (auto& v : e.shuf)
 								v = 0x80;
@@ -77,7 +86,7 @@ namespace slider_body_neg {
 				}
 			}
 
-			return table;
+			return output;
 		}();
 
 	__declspec(noinline) u32 parse_slider_point_negative(const char*__restrict p, slider_point* __restrict const out, const u32 in, const u32 com) noexcept {
@@ -86,11 +95,17 @@ namespace slider_body_neg {
 		const auto digits = _mm_sub_epi8(input, _mm_set1_epi8('0'));
 
 		const u32 first2 = u16(in);
+
 		const u32 neg_bits = in >> 16u;
+		const u32 key_in{ first2 | neg_bits };
 
-		const auto key = (u32)_pext_u32(first2 | neg_bits, 0b000110111101u);
+		const auto key = (u32)_pext_u32(key_in, 0b000110111101u);
 
-		const auto& info = NEGATIVE_INFO[key];
+		const auto& info = NEGATIVE_INFO.table[key];
+
+		if (NEGATIVE_INFO.validation[key] != key_in) [[unlikely]] {
+			return 0;
+		}
 
 		const auto shuff =_mm_shuffle_epi8(digits, _mm_load_si128((const __m128i*)info.shuf.data()));
 

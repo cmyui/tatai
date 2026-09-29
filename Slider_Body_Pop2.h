@@ -22,20 +22,36 @@ namespace slider_body_pop2 {
 
 	alignas(64) inline constexpr auto POINT_SINGLE_SHUF_DELIM2 = [] {
 
-		std::array<std::array<u8, 16>, 28> table{};
 
-		for (auto& entry : table)
+		struct alignas(16) _validation {
+			u32 mask;
+			u8 padding0[12];
+		};
+
+		struct _ret {
+
+			alignas(64) std::array<std::array<u8, 16>, 28> table{};
+			alignas(64) std::array<_validation, 28> validation;
+
+		} output{};
+
+		for (auto& entry : output.table)
 			for (auto& b : entry)
 				b = 0x80;
 
-		auto write = [&table](u32 mask, u32 x, u32 y) {
+		for (auto& vali : output.validation)
+			vali.mask = u32(-1);
+
+		auto write = [&output](u32 mask, u32 x, u32 y) {
 
 			const u32 key = (mask * 3u) & 0x6cu;
 
 			const u32 byte_offset = key * 4u;
 			const u32 slot = byte_offset / 16u;
 
-			auto& s = table[slot];
+			output.validation[slot].mask = mask;
+
+			auto& s = output.table[slot];
 
 			const u32 y_start = x + 1;
 
@@ -59,7 +75,7 @@ namespace slider_body_pop2 {
 		write(0x48, 3, 2);
 		write(0x88, 3, 3);
 
-		return table;
+		return output;
 	}();
 
 }

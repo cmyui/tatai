@@ -872,6 +872,8 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 					auto* error_header = (_object_header_error*)(MEM->object_body);
 
+					//if (error_header->error_count) printf("CORRECTIONS:%i\n", error_header->error_count);
+
 					for (size_t i{}, size{ error_header->error_count }; i < size; ++i) {
 
 						auto* v = error_header->error_out + i;
@@ -929,7 +931,7 @@ void run_test_folder() {
 			if (file_name.find(".osu") == std::string::npos)
 				continue;
 
-			//printf("%s\n", file_name.c_str());
+			printf("%s\n", file_name.c_str());
 
 			read_file2(file_name.c_str(), FILE_BUFFER);
 

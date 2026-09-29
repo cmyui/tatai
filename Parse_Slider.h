@@ -18,10 +18,9 @@ __forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shu
 
 __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point *const __restrict out) {
 
-	// still need error flag detection for objects outside the digit range of 1-3
+	// for objects outside the digit range of 1-3
 	//      example: 0:1234
-	// once maybe returning back 0 just plops into a general parser
-	// (potentially staying in that general parser for the rest of the path)
+	// returning 0 puts this slider into a deferred list to be recomputed using a general parser
 
 	const auto m0 = _mm_loadu_si128((const __m128i *)p);
 
@@ -65,7 +64,15 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point
 
 			const u32 key = (first2 * 3u) & 0x6Cu;
 
-			const auto *tbl = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.data());
+			{
+				const auto* tbl_vali = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.validation.data());
+
+				if (*(tbl_vali + key) != first2) [[unlikely]] {
+					return 0;
+				}
+			}
+
+			const auto *tbl = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.table.data());
 
 			parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i *)(tbl + key)), out);
 
@@ -87,9 +94,19 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point
 
 	if (second & commas) [[unlikely]] { // POP 2
 
-		const u32 key = ((_blsi_u32(first4) | second) * 3u) & 0x6Cu;
+		const u32 key_in{ (_blsi_u32(first4) | second) };
 
-		const auto *tbl = (const u32 *)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.data());
+		const u32 key = (key_in * 3u) & 0x6Cu;
+
+		{
+			const auto* tbl_vali = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.validation.data());
+
+			if (*(tbl_vali + key) != key_in) [[unlikely]] {
+				return 0;
+			}
+		}
+
+		const auto *tbl = (const u32 *)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.table.data());
 
 		parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i *)(tbl + key)), out);
 

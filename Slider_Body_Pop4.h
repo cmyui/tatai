@@ -7,7 +7,6 @@ namespace slider_body_pop4 {
 	// simple 256 (only 81 possible inputs so, gross) with minor shift to better align the most common into joined lanes...
 	// 4k... an entire page...
 
-
 	alignas(64) inline constexpr auto POINT_PAIR_SHUF_DELIM4 = [] {
 
 		struct alignas(16) _validation {
@@ -26,6 +25,9 @@ namespace slider_body_pop4 {
 		for (auto& entry : table.table)
 			for (auto& b : entry)
 				b = 0x80;
+
+		for (auto& entry : table.validation)
+			entry.mask = u32(-1);
 
 		constexpr auto make_mask = [](u32 x0, u32 y0, u32 x1, u32 y1) {
 
