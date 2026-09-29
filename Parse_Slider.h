@@ -40,6 +40,8 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point
 
 	if (const u32 negative = first4 & ((first4 << 1u) + 1u); negative) [[unlikely]] {
 
+		//static u32 BRANCH_COUNT{}; printf("NEGATIVE: %i\n", ++BRANCH_COUNT);
+
 		const u32 sep = X & ~negative;
 
 		const auto first2 = (u32)_pdep_u32(0b11, sep);
@@ -75,6 +77,8 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point
 
 	}
 
+	//static u32 BRANCH_COUNT{}; printf("NORMAL: %i\n", ++BRANCH_COUNT);
+
 	const auto commas = (u32)_mm_movemask_epi8(comma_xmm);
 	const auto digits = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
 
@@ -96,8 +100,18 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point
 
 		const u32 key = ((first4 * 27151u) >> 5u) & 0xff0u;
 
+		{
+
+			const auto validation_flag = *(const u32*)((const u8*)slider_body_pop4::POINT_PAIR_SHUF_DELIM4.validation.data() + key);
+
+			if (validation_flag != first4) [[unlikely]] {
+				return 0;
+			}
+
+		}
+
 		parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i *)((const u8 *)
-					slider_body_pop4::POINT_PAIR_SHUF_DELIM4.table.data() + key)), out);
+					slider_body_pop4::POINT_PAIR_SHUF_DELIM4.table.data() + key)), out);		
 
 		unsigned long consumed;
 		_BitScanReverse(&consumed, first4);
@@ -109,7 +123,30 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point
 
 #include "Parse_Double.h"
 
+__declspec(noinline) void push_error_slider_body_list(_slider_data*const object) {
+
+	auto*const p = (const char*const)object->point_end;
+
+	object->point_end = object->point_start;
+
+	auto* error_header = (_object_header_error*)(size_t(object) & POINTER_RESET_MASK);
+	
+	const auto new_count = error_header->error_count + 1;
+	
+	error_header->error_out = (_error_entry*)byte_allocator::resize(
+		new_count * sizeof(_error_entry),
+		error_header->error_out, error_header->ALLOC_error_out);
+	
+	error_header->error_out[error_header->error_count++] = _error_entry{
+		.line = p,
+		.object = (_object_header*)object
+	};
+
+}
+
+
 __forceinline const char *parse_slider_path(const char *__restrict p, slider_point *__restrict slider_ptr, _slider_data *const __restrict r) {
+
 
 	{ // hitsound
 
@@ -122,11 +159,19 @@ __forceinline const char *parse_slider_path(const char *__restrict p, slider_poi
 	r->curve_type = *p;
 	p += 2;
 
+	r->point_end = (slider_point*)size_t(p); // Should be safe, we write over this again in all cases except the error
+
 	r->point_start = slider_ptr;
 
 	for (;;) {
 
 		const auto result = parse_two_slider_points(p, slider_ptr);
+
+		if (result == 0) [[unlikely]] { // ditch all our work and come back later		
+			push_error_slider_body_list(r);
+			return nullptr;
+		}
+
 
 		slider_ptr += u8(result);
 		p += (result >> 24);

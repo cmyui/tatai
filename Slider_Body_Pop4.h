@@ -7,11 +7,20 @@ namespace slider_body_pop4 {
 	// simple 256 (only 81 possible inputs so, gross) with minor shift to better align the most common into joined lanes...
 	// 4k... an entire page...
 
+
 	alignas(64) inline constexpr auto POINT_PAIR_SHUF_DELIM4 = [] {
+
+		struct alignas(16) _validation {
+			u32 mask;
+			u8 padding0[12];
+		};
 
 		struct alignas(64) pop4_table_storage {
 			std::array<u8, 16> padding0;
+
 			std::array<std::array<u8, 16>, 256> table;
+			std::array<_validation, 256> validation;
+
 		} table{};
 
 		for (auto& entry : table.table)
@@ -20,10 +29,10 @@ namespace slider_body_pop4 {
 
 		constexpr auto make_mask = [](u32 x0, u32 y0, u32 x1, u32 y1) {
 
-			const auto d0 = x0;
-			const auto d1 = x0 + y0 + 1;
-			const auto d2 = x0 + y0 + x1 + 2;
-			const auto d3 = x0 + y0 + x1 + y1 + 3;
+			const u32 d0 = x0;
+			const u32 d1 = x0 + y0 + 1;
+			const u32 d2 = x0 + y0 + x1 + 2;
+			const u32 d3 = x0 + y0 + x1 + y1 + 3;
 
 			return (1u << d0) | (1u << d1) | (1u << d2) | (1u << d3);
 		};
@@ -33,16 +42,15 @@ namespace slider_body_pop4 {
 				for (u32 x1{ 1 }; x1 < 4; ++x1) {
 					for (u32 y1{ 1 }; y1 < 4; ++y1) {
 
-						const u32 digit_count = x0 + y0 + x1 + y1;
-
-						//if (digit_count < 9)
-						//    continue;
-
 						const u32 delim_mask = make_mask(x0, y0, x1, y1);
 
 						const u32 key = ((delim_mask * 27151u) >> 5u) & 0xff0u;
 
-						auto& s = table.table[key >> 4];
+						const u32 index = key >> 4;
+
+						table.validation[index].mask = delim_mask;
+
+						auto& s = table.table[index];
 
 						const u32 colon0 = x0;
 						const u32 pipe0 = x0 + y0 + 1;

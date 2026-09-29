@@ -58,10 +58,18 @@ namespace parse_7_time {
 
 		const auto tbl_data = (u32)load_u16(SHUF_XY_INDEX_7D + xy_pair);
 
-		if ((v & (xy_pair << 8u)) == 0u) [[unlikely]]
+		if ((v & (xy_pair << 8u)) == 0u) [[unlikely]] {
+
 			return 0;
+		}
 
 		const u32 yc = u8(tbl_data);
+
+		if (yc == 0) [[unlikely]] {
+
+			return 1;
+		}
+
 		const u32 shuf_base = tbl_data >> 8;
 
 		const u64* const tbl = (u64 const*)SHUF_TBL7;

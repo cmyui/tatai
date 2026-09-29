@@ -78,6 +78,8 @@ namespace parse_4_time {
 
 		if ((v & (xy_pair << 5u)) == 0u) {
 
+			// TODO: now we need to actually tell if this is a time increase or just a straight up invalid line
+
 			return 0u;
 		}
 
@@ -112,7 +114,16 @@ namespace parse_4_time {
 
 		_mm_store_si128((__m128i*)out_object, result);
 
-		return consumed;
+		if (consumed > 2) [[likely]] {
+			return consumed;
+
+		} else [[unlikely]] {
+
+			push_error_object_header_list(p, out_object);
+
+			return 1;
+		}
+
 	}
 
 }

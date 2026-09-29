@@ -122,7 +122,15 @@ namespace parse_5_time {
 
 		}
 
-		return consumed;
+		if (consumed > 2) [[likely]] {
+			return consumed;
+
+		} else [[unlikely]] {
+
+			push_error_object_header_list(p, out_object);
+
+			return 1;
+		}
 	}
 
 	__declspec(noinline) u32 NO_INLINE_parse_object_5digit_single(const char* __restrict p, _object_header* const __restrict out_object) {

@@ -130,6 +130,20 @@ struct alignas(16) _object_header {
 	u32 type; // hit sound data will be blitted here afterwards
 };
 
+struct _error_entry {
+	const char* line;
+	_object_header* object;
+};
+
+struct alignas(16) _object_header_error {
+	_error_entry* error_out;
+	u32 error_count;
+	u32 ALLOC_error_out;
+};
+
+static_assert(sizeof(_object_header_error) == sizeof(_object_header));
+
+
 struct _spinner_data {
 	u32 end_time;
 };
@@ -143,7 +157,7 @@ struct _slider_data {
 
 };
 
-struct _object_data {
+struct _object_body {
 
 	union {
 
@@ -152,7 +166,7 @@ struct _object_data {
 
 	};
 
-}; static_assert(sizeof(_object_data) == 32);
+}; static_assert(sizeof(_object_body) == 32);
 
 
 struct _slider_deferral {
@@ -305,6 +319,28 @@ size_t is_valid_slider_type(u32 v) {
 	return (table >> (u32(v) & 31)) & 1;
 }
 
+#include "Memory.h"
+
+
+__declspec(noinline) void push_error_object_header_list(const char* __restrict p, _object_header* object) {
+
+	object->type = 0;
+
+	auto* error_header = (_object_header_error*)(size_t(object) & POINTER_RESET_MASK);
+
+	const auto new_count = error_header->error_count + 1;
+
+	error_header->error_out = (_error_entry*)byte_allocator::resize(
+		new_count * sizeof(_error_entry),
+		error_header->error_out, error_header->ALLOC_error_out);
+
+	error_header->error_out[error_header->error_count++] = _error_entry{
+		.line = p,
+		.object = object
+	};
+
+}
+
 #include "Parse_7_time.h"
 #include "Parse_6_time.h"
 #include "Parse_5_time.h"
@@ -313,44 +349,74 @@ size_t is_valid_slider_type(u32 v) {
 #include "Parse_Slider.h"
 #include "Parse_Spinner.h"
 
+#include "Parse_Slider_General.h"
+
 #include <thread>
 #include <chrono>
 
+#include <cstdlib>
+
+constexpr u32 MAX_NOTES{ (1 << 15)-1 };
+
+struct _object_body_buffer {
+	_object_body objects[MAX_NOTES];
+};
+
 struct _memory_region {
 
-	u8* object_header_data;
-	u8* object_body_data;
-	const char** lines;
+	//u8* object_header_data;
+	//u8* object_body_data;
 
+	_object_header* object_header;
+	_object_body* object_body;
+
+	const char** lines;
 	_slider_deferral* slider_defer_table;
 
 	slider_point* SLIDER_PATHS;
 
 	u32 note_count;
 
+//private:
+
+	u32 ALLOC_object_header, ALLOC_object_body, ALLOC_lines, ALLOC_slider_path, ALLOC_slider_defer;
+
+public:
+
 	void init_memory() {
 
-		constexpr u32 MAX_NOTES{ u16(-1) };
-		constexpr u32 NOTE_DATA_OFFSET{ (sizeof(_object_header) * MAX_NOTES) };
+		// align to 512mb so we can use p & ~((1<<29)-1) to get the base pointer from any object_header pointer
+		object_header = (_object_header*)byte_allocator::reserve_aligned<1<<29>(ALLOC_object_header);
+		object_body = (_object_body*)byte_allocator::reserve_aligned<1 << 29>(ALLOC_object_body);
 
-		object_header_data = new u8[
-			NOTE_DATA_OFFSET +
-				(sizeof(_object_data) * MAX_NOTES)
-		];
+		//object_body_data = object_header_data + NOTE_DATA_OFFSET;
+		lines = (const char**)byte_allocator::reserve(ALLOC_lines);
 
-		object_body_data = object_header_data + NOTE_DATA_OFFSET;
-		lines = new const char* [MAX_NOTES];
+		SLIDER_PATHS = (slider_point*)byte_allocator::reserve(ALLOC_slider_path);
+		slider_defer_table = (_slider_deferral*)byte_allocator::reserve(ALLOC_slider_defer);
 
-		SLIDER_PATHS = new slider_point[MAX_NOTES];
+		{
+			auto* error_list = (_object_header_error*)object_header;
 
-		slider_defer_table = new _slider_deferral[MAX_NOTES];
+			ZeroMemory(error_list, sizeof(_object_header_error));
+
+			error_list->error_out = (_error_entry*)byte_allocator::reserve(error_list->ALLOC_error_out);
+		}
+		{
+			auto* error_list = (_object_header_error*)object_body;
+
+			ZeroMemory(error_list, sizeof(_object_header_error));
+
+			error_list->error_out = (_error_entry*)byte_allocator::reserve(error_list->ALLOC_error_out);
+		}
+
 
 	}
 
 	void print_map_data() {
 
-		_object_header* o{ (_object_header*)object_header_data };
-		_slider_data* s{ (_slider_data*)object_body_data };
+		_object_header* o{ object_header + 1 };
+		_slider_data* s{ ((_slider_data*)object_body)+1 };
 
 		for (size_t i{}; i < note_count; ++i) {
 
@@ -499,9 +565,45 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 	MEM->note_count = 0;
 
-	if (MEM->object_body_data == nullptr)
+	if (MEM->object_header == nullptr)
 		MEM->init_memory();
 
+	((_object_header_error*)MEM->object_header)->error_count = 0;
+	((_object_header_error*)MEM->object_body)->error_count = 0;
+
+	{
+
+		const auto file_size{ (end - p) };
+
+		auto* new_lines = (const char**)byte_allocator::resize(
+			sizeof(const char*) * (file_size + 4), MEM->lines, MEM->ALLOC_lines);
+
+		//64mb is the max size accepted - fail on any file above that size
+		if (new_lines == nullptr)
+			return;
+
+		MEM->lines = new_lines;
+
+		const u64 max_slider_points = file_size >> 2;
+
+		MEM->SLIDER_PATHS = (slider_point*)byte_allocator::resize(
+			sizeof(slider_point) * max_slider_points, MEM->SLIDER_PATHS, MEM->ALLOC_slider_path);
+
+		//X,X,X,XN
+		const u32 max_notes = file_size >> 3;
+
+		MEM->object_header = (_object_header*)byte_allocator::resize(
+			sizeof(_object_header) * max_notes, MEM->object_header, MEM->ALLOC_object_header);
+
+		MEM->object_body = (_object_body*)byte_allocator::resize(
+			sizeof(_object_body) * max_notes, MEM->object_body, MEM->ALLOC_object_body);
+
+		//TODO figure out minimum slider length i should accept
+
+		MEM->slider_defer_table = (_slider_deferral*)byte_allocator::resize(
+			sizeof(_slider_deferral) * max_notes, MEM->slider_defer_table, MEM->ALLOC_slider_defer);
+
+	}
 
 	// get the alignment in the raw data, can be done because of the [HitObjects] line being there, remove the u here once done
 
@@ -509,8 +611,8 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 	const auto nl = _mm256_set1_epi8('\n');
 
-	_object_header* object_ptr{ (_object_header*)MEM->object_header_data };
-	_slider_data* object_data_ptr{ (_slider_data*)MEM->object_body_data };
+	_object_header* object_ptr{ ((_object_header*)MEM->object_header) +1 };
+	_slider_data* object_data_ptr{ (_slider_data*)(MEM->object_body+1) };
 
 	slider_point* slider_ptr{ MEM->SLIDER_PATHS };
 
@@ -537,6 +639,9 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 				*line_ptr++ = p;
 
+				#define DO { const auto bit = _tzcnt_u64(mask); *(line_ptr++) = p + bit; mask = _blsr_u64(mask); }
+
+
 				for (; p + 64 <= end; p += 63) {
 
 					const auto v0 = _mm256_loadu_si256((__m256i const*)(p + 0x00));
@@ -544,12 +649,14 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 					++p;
 
-					const auto m0 = (u32)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, nl));
-					const auto m1 = (u32)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, nl));
+					const auto cmp0 = _mm256_cmpeq_epi8(v0, nl);
+					const auto cmp1 = _mm256_cmpeq_epi8(v1, nl);
+
+					const auto m0 = (u32)_mm256_movemask_epi8(cmp0);
+					const auto m1 = (u32)_mm256_movemask_epi8(cmp1);
 
 					auto mask = u64(m0) | (u64(m1) << 32);
 
-					#define DO { const auto bit = _tzcnt_u64(mask); *(line_ptr++) = p + bit; mask = _blsr_u64(mask); }
 
 					const auto count = (u32)_mm_popcnt_u64(mask);
 
@@ -583,7 +690,7 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 				}
 
-				#undef DO
+				#undef DO		
 
 				line_ptr_end = line_ptr;
 
@@ -607,8 +714,8 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 			//for (size_t CRANK{}; CRANK < 100000; ++CRANK)
 			{
-				object_ptr = (_object_header*)MEM->object_header_data;
-				object_data_ptr = (_slider_data*)MEM->object_body_data;
+				object_ptr = ((_object_header*)MEM->object_header) + 1;
+				object_data_ptr = (_slider_data*)(MEM->object_body+1);
 				slider_ptr = MEM->SLIDER_PATHS;
 				slider_defer_table = MEM->slider_defer_table;
 				//line_ptr = MEM->lines;
@@ -688,8 +795,8 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 					{
 
-						const auto res = PAIR_parse_object_loop<parse_5_time::parse_object_5digit_pair>(
-						//const auto res = parse_object_loop<parse_5_time::parse_object_5digit_single>(
+						//const auto res = PAIR_parse_object_loop<parse_5_time::parse_object_5digit_pair>(
+						const auto res = parse_object_loop<parse_5_time::parse_object_5digit_single>(
 							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
 						slider_defer_table += u32(res >> 32);
@@ -739,15 +846,47 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 			parse_finished:
 
-			for (auto* d = MEM->slider_defer_table; d != slider_defer_table; ++d) {
+				// error table
 
-				d->p = parse_slider_path(d->p, slider_ptr, d->out);
-				slider_ptr = d->out->point_end;
+				{ // calc slider paths
+					for (auto* d = MEM->slider_defer_table; d != slider_defer_table; ++d) {
 
-			}
+						d->p = parse_slider_path(d->p, slider_ptr, d->out);
 
-			for (const auto* d = MEM->slider_defer_table; d != slider_defer_table; ++d)
-				parse_slider_length(d->p, d->out);
+						slider_ptr = d->out->point_end;
+
+					}
+				}
+
+				{ // calc slider length
+					for (const auto* d = MEM->slider_defer_table; d != slider_defer_table; ++d) {
+
+						if (d->p == nullptr) [[unlikely]]
+							continue;
+
+						parse_slider_length(d->p, d->out);
+					}
+				}
+
+				{ // fall back general cases
+
+					auto* error_header = (_object_header_error*)(MEM->object_body);
+
+					for (size_t i{}, size{ error_header->error_count }; i < size; ++i) {
+
+						auto* v = error_header->error_out + i;
+
+						const auto ret = general_parse_slider_points(v->line, slider_ptr, (_slider_data*)v->object);
+
+						if (ret == 0)[[unlikely]] // fully corrupted slider data, abort map?
+							return;
+
+					}
+
+					error_header->error_count = 0;
+
+				}				
+
 
 			}
 
@@ -755,7 +894,9 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 	}
 
-	MEM->note_count = object_ptr - (_object_header*)MEM->object_header_data;
+	MEM->note_count = object_ptr - ((_object_header*)(
+		(size_t)MEM->object_header & POINTER_RESET_MASK
+		)+1);
 
 	return;
 }
@@ -765,7 +906,7 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 void run_test_folder() {
 
-	return;
+	//return;
 
 	_memory_region MR{};
 
@@ -778,7 +919,7 @@ void run_test_folder() {
 
 		std::vector<u8> FILE_BUFFER{};
 
-		_Timer A{};
+		//_Timer A{};
 		for (const auto& file_entry : std::filesystem::directory_iterator("../fast_beatmap_load/map/maps")) {
 
 			const auto _p{ file_entry.path().native() };
@@ -800,7 +941,7 @@ void run_test_folder() {
 
 			if ((COUNT & ((1<<10)-1)) == 0) printf("%i\n", COUNT);
 
-			//if (COUNT > 30000) break;
+			//if (COUNT > 2000) break;
 
 			u32 XOR = 0;
 
@@ -820,18 +961,18 @@ void run_test_folder() {
 
 			//printf("%s> %.2f\xE6s (%.2fns)\n", file_name.substr(file_name.find_last_of('/') + 1).c_str(), micro_seconds, nano_seconds / double(MR.note_count ? MR.note_count : 1));
 
-			XOR_TOTAL ^= MR.object_body_data[593];
-			XOR_TOTAL ^= MR.object_header_data[4882];
-			XOR_TOTAL += XOR ^ MR.object_body_data[52];
+			XOR_TOTAL ^= (size_t)MR.object_body[593].slider.point_start;
+			XOR_TOTAL ^= (size_t)MR.object_header[4882].time;
+			XOR_TOTAL += XOR ^ MR.object_body[52].spinner.end_time;
 			XOR_TOTAL += MR.note_count;;
 
 		}
 
-		const auto duration = (u64)(std::chrono::duration_cast<std::chrono::milliseconds>(total_elapsed_time).count());
+		const auto duration = (u64)(std::chrono::duration_cast<std::chrono::nanoseconds>(total_elapsed_time).count());
 		//
-		//double nano_seconds{ (double(duration) / 1000.) };
-		//double micro_seconds{ nano_seconds / 1000. };
-		printf("TOTAL_TIME: %fs\n", double(duration) / 1000.);
+		double nano_seconds{ double(duration) };
+		double micro_seconds{ nano_seconds / 1000. };
+		printf("TOTAL_TIME: %fs\n", micro_seconds);
 	}
 	printf("%i\n", XOR_TOTAL);
 
@@ -849,7 +990,11 @@ int main() {
 	data.push_back('\n');
 	data.resize(data.size() + 128);
 
-	_memory_region MR{}; MR.init_memory();
+	_memory_region MR{};
+	{
+		//_Timer A{};
+		MR.init_memory();
+	}
 
 	for (size_t warm_up{}; warm_up < 1000; ++warm_up)
 		parse_beatmap_from_memory(&MR, (char*)data.data(), (char*)data.data() + data.size() - 128);
