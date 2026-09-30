@@ -883,6 +883,9 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 						if (ret == 0)[[unlikely]] // fully corrupted slider data, abort map?
 							return;
 
+						slider_ptr = ((_slider_data*)v->object)->point_end;
+
+
 					}
 
 					error_header->error_count = 0;
@@ -910,7 +913,7 @@ void run_test_folder() {
 
 	//return;
 
-	_memory_region MR{};
+	_memory_region MR{}; MR.init_memory();
 
 	u32 XOR_TOTAL{};
 	u32 COUNT{};
@@ -931,7 +934,7 @@ void run_test_folder() {
 			if (file_name.find(".osu") == std::string::npos)
 				continue;
 
-			printf("%s\n", file_name.c_str());
+			//printf("%s\n", file_name.c_str());
 
 			read_file2(file_name.c_str(), FILE_BUFFER);
 
@@ -974,7 +977,7 @@ void run_test_folder() {
 		//
 		double nano_seconds{ double(duration) };
 		double micro_seconds{ nano_seconds / 1000. };
-		printf("TOTAL_TIME: %fs\n", micro_seconds);
+		printf("TOTAL_TIME: %f| average_per_map:%f\n", micro_seconds, micro_seconds / double(COUNT));
 	}
 	printf("%i\n", XOR_TOTAL);
 
@@ -993,7 +996,7 @@ int main() {
 	data.resize(data.size() + 128);
 
 	_memory_region MR{};
-	{
+	{	
 		//_Timer A{};
 		MR.init_memory();
 	}
