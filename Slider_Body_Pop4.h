@@ -15,6 +15,7 @@ namespace slider_body_pop4 {
 		};
 
 		struct alignas(64) pop4_table_storage {
+
 			std::array<u8, 16> padding0;
 
 			std::array<std::array<u8, 16>, 256> table;
@@ -73,6 +74,7 @@ namespace slider_body_pop4 {
 
 						for (u32 i{}; i < y1; ++i)
 							s[16 - y1 + i] = u8(y1_start + i);
+
 					}
 				}
 			}

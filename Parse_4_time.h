@@ -107,7 +107,7 @@ namespace parse_4_time {
 		const u64* const tbl = (u64 const*)SHUF_TBL4;
 		const auto shuf = _mm_load_si128((__m128i const*)(tbl + shuf_base));
 
-		const auto pair = _mm_maddubs_epi16(_mm_shuffle_epi8(digits, shuf),
+		const auto pair = _mm_maddubs_epi16(_mm_shuffle_epi8(digits, shuf), 
 			_mm_setr_epi8(10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1));
 
 		const auto result = _mm_madd_epi16(pair, _mm_setr_epi16(100, 1, 100, 1, 100, 1, 100, 1));
@@ -115,6 +115,7 @@ namespace parse_4_time {
 		_mm_store_si128((__m128i*)out_object, result);
 
 		if (consumed > 2) [[likely]] {
+
 			return consumed;
 
 		} else [[unlikely]] {

@@ -104,6 +104,7 @@ namespace slider_body_neg {
 		const auto& info = NEGATIVE_INFO.table[key];
 
 		if (NEGATIVE_INFO.validation[key] != key_in) [[unlikely]] {
+
 			return 0;
 		}
 

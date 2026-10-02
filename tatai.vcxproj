@@ -220,6 +220,7 @@
     <ClInclude Include="Parse_6_time.h" />
     <ClInclude Include="Parse_7_time.h" />
     <ClInclude Include="Parse_Double.h" />
+    <ClInclude Include="Parse_File_Header.h" />
     <ClInclude Include="Parse_Slider.h" />
     <ClInclude Include="Parse_Slider_General.h" />
     <ClInclude Include="Parse_Spinner.h" />

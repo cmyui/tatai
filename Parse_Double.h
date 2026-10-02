@@ -269,9 +269,13 @@ namespace parse_double{
 
 			const u32 frac = (end - dot) - u32(dot < end);
 
-			const auto shuff = _mm_shuffle_epi8(numeric, _mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[end * 17 + dot].data())));
+			const auto shuff = _mm_shuffle_epi8(numeric, _mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[end * 17u + dot].data())));
 
-			return double(int64_t(compute_decimal16(shuff))) / POW10[frac];
+			return double((i64)compute_decimal16(shuff)) / POW10[frac];
+		}
+
+		__declspec(noinline) double NO_INLINE_parse_decimal_16(const char* p) noexcept {
+			return parse_decimal_16(p);
 		}
 
 		inline u64 load_ascii_decimal_16(const char* p) noexcept {

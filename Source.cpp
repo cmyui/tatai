@@ -55,15 +55,12 @@ public:
 #define PCAT2(x, r) r
 #define ON_SCOPE_EXIT(...) on_scope_exit PCAT0(__scope, __LINE__) {[&]{__VA_ARGS__}}
 
-typedef int_fast8_t fu8;
-typedef int_fast16_t fu16;
-typedef int_fast32_t fu32;
-typedef int_fast64_t fu64;
-
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+
+typedef int64_t i64;
 
 constexpr u32 pext_constexpr(u32 v, u32 m) noexcept {
 
@@ -291,6 +288,28 @@ namespace parse_integer_m3 {
 
 }
 
+namespace parse_integer_m3 {
+
+
+	__forceinline u32 expect_2(u32 x) { // TODO min-max this
+
+		const u32 d0 = u8(x) - u8('0');
+		const u32 d1 = u8(x >> 8u) - u8('0');
+		const u32 d2 = u8(x >> 16u) - u8('0');
+
+		if (d1 > 9)
+			return d0;
+
+		if (d2 > 9)
+			return d0 * 10 + d1;
+
+
+		return d0 * 100 + d1 * 10 + d2;
+	}
+
+
+}
+
 
 namespace parse_integer_m2 {
 
@@ -362,6 +381,11 @@ struct _object_body_buffer {
 	_object_body objects[MAX_NOTES];
 };
 
+struct _timing_point {
+	double beat_length, tick_beat_length;
+	u32 time;
+};
+
 struct _memory_region {
 
 	//u8* object_header_data;
@@ -375,11 +399,56 @@ struct _memory_region {
 
 	slider_point* SLIDER_PATHS;
 
-	u32 note_count;
+	_timing_point* timing_points;
+
+	u32 note_count, timing_point_count;
 
 //private:
 
-	u32 ALLOC_object_header, ALLOC_object_body, ALLOC_lines, ALLOC_slider_path, ALLOC_slider_defer;
+	u32 ALLOC_object_header, ALLOC_object_body, ALLOC_lines, ALLOC_slider_path, ALLOC_slider_defer, ALLOC_timing_points;
+
+
+	struct _osu_header {
+
+		u32 version_number;
+
+		double StackLeniency;
+		std::string_view Mode;
+		std::string_view AudioFilename;
+		std::string_view AudioLeadIn;
+		std::string_view PreviewTime;
+		std::string_view Countdown;
+		std::string_view SampleSet;
+		std::string_view LetterboxInBreaks;
+		std::string_view UseSkinSprites;
+		std::string_view OverlayPosition;
+		std::string_view SkinPreference;
+		std::string_view EpilepsyWarning;
+		//std::string_view CountdownOffset;
+		std::string_view SpecialStyle;
+		std::string_view WidescreenStoryboard;
+		std::string_view SamplesMatchPlaybackRate;
+
+		std::string_view Title;
+		std::string_view TitleUnicode;
+		std::string_view Artist;
+		std::string_view ArtistUnicode;
+		std::string_view Creator;
+		std::string_view Version;
+		std::string_view Source;
+		std::string_view Tags;
+		std::string_view BeatmapID;
+		std::string_view BeatmapSetID;
+
+		float HPDrainRate;
+		float CircleSize;
+		float OverallDifficulty;
+		float ApproachRate;
+
+		double SliderMultiplier;
+		double SliderTickRate;
+
+	} headers;
 
 public:
 
@@ -395,6 +464,8 @@ public:
 		SLIDER_PATHS = (slider_point*)byte_allocator::reserve(ALLOC_slider_path);
 		slider_defer_table = (_slider_deferral*)byte_allocator::reserve(ALLOC_slider_defer);
 
+		timing_points = (_timing_point*)byte_allocator::reserve(ALLOC_timing_points);
+
 		{
 			auto* error_list = (_object_header_error*)object_header;
 
@@ -409,7 +480,6 @@ public:
 
 			error_list->error_out = (_error_entry*)byte_allocator::reserve(error_list->ALLOC_error_out);
 		}
-
 
 	}
 
@@ -558,12 +628,15 @@ const char* find_hitobjects_line(const char* const start, const char* const end)
 	return end;
 }
 
+#include "Parse_File_Header.h"
+
 void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __restrict p, char const* __restrict end) {
 
 	if (MEM == 0)
 		return;
 
 	MEM->note_count = 0;
+	MEM->timing_point_count = 0;
 
 	if (MEM->object_header == nullptr)
 		MEM->init_memory();
@@ -582,12 +655,15 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 		if (new_lines == nullptr)
 			return;
 
-		MEM->lines = new_lines;
+		MEM->lines = new_lines;	
 
 		const u64 max_slider_points = file_size >> 2;
 
 		MEM->SLIDER_PATHS = (slider_point*)byte_allocator::resize(
 			sizeof(slider_point) * max_slider_points, MEM->SLIDER_PATHS, MEM->ALLOC_slider_path);
+
+		MEM->timing_points = (_timing_point*)byte_allocator::resize(
+			sizeof(_timing_point) * max_slider_points, MEM->timing_points, MEM->ALLOC_timing_points);
 
 		//X,X,X,XN
 		const u32 max_notes = file_size >> 3;
@@ -603,11 +679,8 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 		MEM->slider_defer_table = (_slider_deferral*)byte_allocator::resize(
 			sizeof(_slider_deferral) * max_notes, MEM->slider_defer_table, MEM->ALLOC_slider_defer);
 
+
 	}
-
-	// get the alignment in the raw data, can be done because of the [HitObjects] line being there, remove the u here once done
-
-	size_t pending{};
 
 	const auto nl = _mm256_set1_epi8('\n');
 
@@ -621,6 +694,76 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 	auto* slider_defer_table{ MEM->slider_defer_table };
 
+	{ // parse all the new lines for now, should skip [Events] unless we specifically want them in the future though.
+
+		*line_ptr++ = p;
+
+		#define DO { const auto bit = _tzcnt_u64(mask); *(line_ptr++) = p + bit; mask = _blsr_u64(mask); }
+
+
+		for (; p + 64 <= end; p += 63) {
+
+			const auto v0 = _mm256_loadu_si256((__m256i const*)(p + 0x00));
+			const auto v1 = _mm256_loadu_si256((__m256i const*)(p + 0x20));
+
+			++p;
+
+			const auto cmp0 = _mm256_cmpeq_epi8(v0, nl);
+			const auto cmp1 = _mm256_cmpeq_epi8(v1, nl);
+
+			const auto m0 = (u32)_mm256_movemask_epi8(cmp0);
+			const auto m1 = (u32)_mm256_movemask_epi8(cmp1);
+
+			auto mask = u64(m0) | (u64(m1) << 32);
+
+
+			const auto count = (u32)_mm_popcnt_u64(mask);
+
+			line_ptr[0] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
+			line_ptr[1] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
+			line_ptr[2] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
+			line_ptr[3] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
+
+			if (count > 4) [[unlikely]] {
+				line_ptr += 4;
+				while (mask) DO
+			} else {
+				line_ptr += count;
+			}
+
+		}
+
+		if (p < end) {
+
+			const auto v0 = _mm256_loadu_si256((__m256i const*)(p + 0x00));
+			const auto v1 = _mm256_loadu_si256((__m256i const*)(p + 0x20));
+
+			const auto m0 = (u32)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, nl));
+			const auto m1 = (u32)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, nl));
+
+			auto mask = _bzhi_u64(u64(m0) | (u64(m1) << 32), u32(end - p));
+
+			++p;
+
+			while (mask) DO
+
+		}
+
+		#undef DO		
+
+		line_ptr_end = line_ptr;
+
+		*line_ptr++ = nullptr;
+		*line_ptr = nullptr;
+
+		line_ptr = MEM->lines;
+
+		_mm256_zeroupper();
+
+	}
+
+
+	line_ptr = parse_beatmap_header(MEM, line_ptr, line_ptr_end);
 
 	{
 
@@ -629,79 +772,6 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 		//_Timer A{};
 		//for (size_t CRANK{}; CRANK < 100000; ++CRANK) 
 		{
-
-			line_ptr = MEM->lines;
-			p = P_SAVE;
-
-			{
-
-				p = find_hitobjects_line(p, end);
-
-				*line_ptr++ = p;
-
-				#define DO { const auto bit = _tzcnt_u64(mask); *(line_ptr++) = p + bit; mask = _blsr_u64(mask); }
-
-
-				for (; p + 64 <= end; p += 63) {
-
-					const auto v0 = _mm256_loadu_si256((__m256i const*)(p + 0x00));
-					const auto v1 = _mm256_loadu_si256((__m256i const*)(p + 0x20));
-
-					++p;
-
-					const auto cmp0 = _mm256_cmpeq_epi8(v0, nl);
-					const auto cmp1 = _mm256_cmpeq_epi8(v1, nl);
-
-					const auto m0 = (u32)_mm256_movemask_epi8(cmp0);
-					const auto m1 = (u32)_mm256_movemask_epi8(cmp1);
-
-					auto mask = u64(m0) | (u64(m1) << 32);
-
-
-					const auto count = (u32)_mm_popcnt_u64(mask);
-
-					line_ptr[0] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
-					line_ptr[1] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
-					line_ptr[2] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
-					line_ptr[3] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
-
-					if (count > 4) [[unlikely]] {
-						line_ptr += 4;
-						while (mask) DO
-					} else {
-						line_ptr += count;
-					}
-
-				}
-
-				if (p < end) {
-
-					const auto v0 = _mm256_loadu_si256((__m256i const*)(p + 0x00));
-					const auto v1 = _mm256_loadu_si256((__m256i const*)(p + 0x20));
-
-					const auto m0 = (u32)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, nl));
-					const auto m1 = (u32)_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, nl));
-
-					auto mask = _bzhi_u64(u64(m0) | (u64(m1) << 32), u32(end - p));
-
-					++p;
-
-					while (mask) DO
-
-				}
-
-				#undef DO		
-
-				line_ptr_end = line_ptr;
-
-				*line_ptr++ = nullptr;
-				*line_ptr = nullptr;
-
-				line_ptr = MEM->lines;
-
-				_mm256_zeroupper();
-
-			}
 
 			for (; line_ptr != line_ptr_end; ++line_ptr) {
 
@@ -783,6 +853,7 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 						const auto res = parse_object_loop<parse_4_time::parse_object_4digit_single>(line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
 						slider_defer_table += u32(res >> 32);
+
 						const auto count = u32(res);
 
 						line_ptr += count;
@@ -859,12 +930,27 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 				}
 
 				{ // calc slider length
+
+					//double last{ 0. }; u64 check{};
+
 					for (const auto* d = MEM->slider_defer_table; d != slider_defer_table; ++d) {
 
 						if (d->p == nullptr) [[unlikely]]
 							continue;
 
-						parse_slider_length(d->p, d->out);
+						d->out->length = parse_double::from_ascii::parse_decimal_16(d->p);
+						 
+						//const auto v = load_u64(d->p);
+						//
+						//if (v == check) {
+						//	d->out->length = last;
+						//	continue;
+						//}
+						//check = v;
+						//
+						//last = parse_double::from_ascii::parse_decimal_16(d->p);
+						//d->out->length = last;
+						//printf("%f\n", d->out->length);
 					}
 				}
 
@@ -970,14 +1056,15 @@ void run_test_folder() {
 			XOR_TOTAL ^= (size_t)MR.object_header[4882].time;
 			XOR_TOTAL += XOR ^ MR.object_body[52].spinner.end_time;
 			XOR_TOTAL += MR.note_count;;
-
+			XOR_TOTAL += MR.headers.StackLeniency;
 		}
 
 		const auto duration = (u64)(std::chrono::duration_cast<std::chrono::nanoseconds>(total_elapsed_time).count());
-		//
+		
 		double nano_seconds{ double(duration) };
 		double micro_seconds{ nano_seconds / 1000. };
 		printf("TOTAL_TIME: %f| average_per_map:%f\n", micro_seconds, micro_seconds / double(COUNT));
+
 	}
 	printf("%i\n", XOR_TOTAL);
 
