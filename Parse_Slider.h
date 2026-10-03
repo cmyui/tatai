@@ -4,7 +4,7 @@
 #include "Slider_Body_Pop2.h"
 #include "Slider_Body_Pop4.h"
 
-__forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shuffle, slider_point *const out) noexcept {
+__forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shuffle, _slider_point *const out) noexcept {
 
 	const auto d = _mm_shuffle_epi8(m0, shuffle);
 
@@ -16,7 +16,7 @@ __forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shu
 
 }
 
-__forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point *const __restrict out) {
+__forceinline u32 parse_two_slider_points(const char *__restrict p, _slider_point *const __restrict out) {
 
 	// for objects outside the digit range of 1-3
 	//      example: 0:1234
@@ -140,29 +140,7 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, slider_point
 
 #include "Parse_Double.h"
 
-__declspec(noinline) void push_error_slider_body_list(_slider_data*const object) {
-
-	auto*const p = (const char*const)object->point_end;
-
-	object->point_end = object->point_start;
-
-	auto* error_header = (_object_header_error*)(size_t(object) & POINTER_RESET_MASK);
-	
-	const auto new_count = error_header->error_count + 1;
-	
-	error_header->error_out = (_error_entry*)byte_allocator::resize(
-		new_count * sizeof(_error_entry),
-		error_header->error_out, error_header->ALLOC_error_out);
-	
-	error_header->error_out[error_header->error_count++] = _error_entry{
-		.line = p,
-		.object = (_object_header*)object
-	};
-
-}
-
-
-__forceinline const char *parse_slider_path(const char *__restrict p, slider_point *__restrict slider_ptr, _slider_data *const __restrict r) {
+__forceinline const char *parse_slider_path(const char *__restrict p, _slider_point*__restrict slider_ptr, _slider_data *const __restrict r) {
 
 
 	{ // hitsound
@@ -176,7 +154,7 @@ __forceinline const char *parse_slider_path(const char *__restrict p, slider_poi
 	r->curve_type = *p;
 	p += 2;
 
-	r->point_end = (slider_point*)size_t(p); // Should be safe, we write over this again in all cases except the error
+	r->point_end = (_slider_point*)size_t(p); // Should be safe, we write over this again in all cases except the error
 
 	r->point_start = slider_ptr;
 

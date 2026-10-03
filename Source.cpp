@@ -116,7 +116,7 @@ std::vector<u8> read_file(const char* file_name) {
 	return ret;
 }
 
-struct slider_point {
+struct _slider_point {
 	int x;
 	int y;
 };
@@ -147,7 +147,7 @@ struct _spinner_data {
 
 struct _slider_data {
 
-	/*const*/ slider_point* point_start, * point_end;
+	/*const*/ _slider_point* point_start, * point_end;
 	double length;
 	u32 slides;
 	u32 curve_type;
@@ -340,41 +340,6 @@ size_t is_valid_slider_type(u32 v) {
 
 #include "Memory.h"
 
-
-__declspec(noinline) void push_error_object_header_list(const char* __restrict p, _object_header* object) {
-
-	object->type = 0;
-
-	auto* error_header = (_object_header_error*)(size_t(object) & POINTER_RESET_MASK);
-
-	const auto new_count = error_header->error_count + 1;
-
-	error_header->error_out = (_error_entry*)byte_allocator::resize(
-		new_count * sizeof(_error_entry),
-		error_header->error_out, error_header->ALLOC_error_out);
-
-	error_header->error_out[error_header->error_count++] = _error_entry{
-		.line = p,
-		.object = object
-	};
-
-}
-
-#include "Parse_7_time.h"
-#include "Parse_6_time.h"
-#include "Parse_5_time.h"
-#include "Parse_4_time.h"
-
-#include "Parse_Slider.h"
-#include "Parse_Spinner.h"
-
-#include "Parse_Slider_General.h"
-
-#include <thread>
-#include <chrono>
-
-#include <cstdlib>
-
 constexpr u32 MAX_NOTES{ (1 << 15)-1 };
 
 struct _object_body_buffer {
@@ -386,33 +351,71 @@ struct _timing_point {
 	u32 time;
 };
 
-struct _memory_region {
+constexpr u64 MEMORY_REGION_SIZE{ 512ull * 1024ull * 1024ull };
+constexpr u64 MEMORY_CHUNK_SIZE = 512ull * 1024ull; // 512kb - 128 pages of 4k
 
-	//u8* object_header_data;
-	//u8* object_body_data;
+enum memory_region_enum : u64{
+	MEM_header = 0,
 
-	_object_header* object_header;
-	_object_body* object_body;
+	MEM_lines,
 
-	const char** lines;
-	_slider_deferral* slider_defer_table;
+	MEM_object_header,
+	MEM_object_body,
 
-	slider_point* SLIDER_PATHS;
+	MEM_timing_point,
 
-	_timing_point* timing_points;
+	MEM_slider_defer,
+	MEM_slider_path,
 
-	u32 note_count, timing_point_count;
+	MEM_object_fallback,
+	MEM_slider_fallback,
 
-//private:
 
-	u32 ALLOC_object_header, ALLOC_object_body, ALLOC_lines, ALLOC_slider_path, ALLOC_slider_defer, ALLOC_timing_points;
+	MEM_REGION_COUNT
+};
 
+struct _memory_region_header {
+
+	__forceinline const char** get_lines() const noexcept {
+		return (const char**)((u8*)this + MEMORY_REGION_SIZE * MEM_lines);
+	}
+	__forceinline _object_header* get_object_header() const noexcept {
+		return (_object_header*)((u8*)this + MEMORY_REGION_SIZE * MEM_object_header);
+	}
+	__forceinline _slider_data* get_object_body() const noexcept {
+		return (_slider_data*)((u8*)this + MEMORY_REGION_SIZE * MEM_object_body);
+	}
+	__forceinline _timing_point* get_timing_point() const noexcept {
+		return (_timing_point*)((u8*)this + MEMORY_REGION_SIZE * MEM_timing_point);
+	}
+	__forceinline _slider_deferral* get_slider_defer() const noexcept {
+		return (_slider_deferral*)((u8*)this + MEMORY_REGION_SIZE * MEM_slider_defer);
+	}
+	__forceinline _slider_point* get_slider_path() const noexcept {
+		return (_slider_point*)((u8*)this + MEMORY_REGION_SIZE * MEM_slider_path);
+	}
+	__forceinline _error_entry* get_slider_fallback() const noexcept {
+		return (_error_entry*)((u8*)this + MEMORY_REGION_SIZE * MEM_slider_fallback);
+	}
+
+
+	u32 ALLOC_COUNTS[MEM_REGION_COUNT];
+
+	u32 ELEM_COUNT[MEM_REGION_COUNT];// this isnt always kept up to date, at least for now
 
 	struct _osu_header {
 
 		u32 version_number;
 
+		float HPDrainRate;
+		float CircleSize;
+		float OverallDifficulty;
+		float ApproachRate;
+
 		double StackLeniency;
+		double SliderMultiplier;
+		double SliderTickRate;
+
 		std::string_view Mode;
 		std::string_view AudioFilename;
 		std::string_view AudioLeadIn;
@@ -440,56 +443,14 @@ struct _memory_region {
 		std::string_view BeatmapID;
 		std::string_view BeatmapSetID;
 
-		float HPDrainRate;
-		float CircleSize;
-		float OverallDifficulty;
-		float ApproachRate;
-
-		double SliderMultiplier;
-		double SliderTickRate;
-
-	} headers;
-
-public:
-
-	void init_memory() {
-
-		// align to 512mb so we can use p & ~((1<<29)-1) to get the base pointer from any object_header pointer
-		object_header = (_object_header*)byte_allocator::reserve_aligned<1<<29>(ALLOC_object_header);
-		object_body = (_object_body*)byte_allocator::reserve_aligned<1 << 29>(ALLOC_object_body);
-
-		//object_body_data = object_header_data + NOTE_DATA_OFFSET;
-		lines = (const char**)byte_allocator::reserve(ALLOC_lines);
-
-		SLIDER_PATHS = (slider_point*)byte_allocator::reserve(ALLOC_slider_path);
-		slider_defer_table = (_slider_deferral*)byte_allocator::reserve(ALLOC_slider_defer);
-
-		timing_points = (_timing_point*)byte_allocator::reserve(ALLOC_timing_points);
-
-		{
-			auto* error_list = (_object_header_error*)object_header;
-
-			ZeroMemory(error_list, sizeof(_object_header_error));
-
-			error_list->error_out = (_error_entry*)byte_allocator::reserve(error_list->ALLOC_error_out);
-		}
-		{
-			auto* error_list = (_object_header_error*)object_body;
-
-			ZeroMemory(error_list, sizeof(_object_header_error));
-
-			error_list->error_out = (_error_entry*)byte_allocator::reserve(error_list->ALLOC_error_out);
-		}
-
-	}
+	} osu_headers;
 
 	void print_map_data() {
 
-		_object_header* o{ object_header + 1 };
-		_slider_data* s{ ((_slider_data*)object_body)+1 };
+		_object_header* o{ get_object_header() };
+		_slider_data* s{ get_object_body() };
 
-		for (size_t i{}; i < note_count; ++i) {
-
+		for (size_t i{}, size{ELEM_COUNT[MEM_object_header]}; i < size; ++i) {
 
 			printf("%i> %i,%i | %i  ", o[i].time, o[i].x, o[i].y, o[i].type);
 
@@ -507,12 +468,100 @@ public:
 
 		}
 
-		printf("NOTE_COUNT: %i\n", note_count);
+		printf("NOTE_COUNT: %i\n", ELEM_COUNT[MEM_object_header]);
 
 	}
 
-
 };
+
+struct _memory_region_new {
+
+	_memory_region_header header;
+
+	u8 padding0[4096 - sizeof(_memory_region_header)];
+
+}; static_assert(sizeof(_memory_region_new) == 4096);
+
+_memory_region_new* create_memory_region(bool dont_pre_alloc = 0) {
+
+	// reserve 8GB of memory - each region can grow to a max of 512mb
+	auto* base_addr = byte_allocator::large_reserve();
+
+	auto* MR = (_memory_region_new*)byte_allocator::commit_memory(base_addr, sizeof(_memory_region_new));
+
+	ZeroMemory(MR, sizeof(_memory_region_new));
+
+	MR->header.ALLOC_COUNTS[0] = sizeof(_memory_region_new);
+
+	if (dont_pre_alloc)
+		return MR;
+
+	for (u64 i{ (u64)MEM_lines }; i <= (u64)MEM_slider_path; ++i) {
+
+		byte_allocator::resize(MEMORY_CHUNK_SIZE, (u8*)base_addr + MEMORY_REGION_SIZE * i, MR->header.ALLOC_COUNTS[i]);
+
+	}
+
+	return MR;
+}
+
+__declspec(noinline) void push_error_object_header_list(const char* __restrict p, _object_header* object) {
+
+	object->type = 0;
+
+	auto* MEM = (_memory_region_new*)(size_t(object) & POINTER_RESET_MASK);
+
+	const auto new_count = ++MEM->header.ELEM_COUNT[MEM_object_fallback];
+
+	auto* err_out = (_error_entry*)((u8*)MEM + (MEMORY_REGION_SIZE * MEM_object_fallback));
+
+	err_out = (_error_entry*)byte_allocator::resize( new_count * sizeof(_error_entry),
+		err_out, MEM->header.ALLOC_COUNTS[MEM_object_fallback]);
+
+	err_out[new_count - 1] = _error_entry{
+		.line = p,
+		.object = object
+	};
+
+}
+
+__declspec(noinline) void push_error_slider_body_list(_slider_data* const object) {
+
+	auto* const p = (const char* const)object->point_end;
+
+	object->point_end = object->point_start;
+
+	auto* MEM = (_memory_region_new*)(size_t(object) & POINTER_RESET_MASK);
+
+	const auto new_count = ++MEM->header.ELEM_COUNT[MEM_slider_fallback];
+
+	auto* err_out = (_error_entry*)((u8*)MEM + (MEMORY_REGION_SIZE * MEM_slider_fallback));
+	
+	err_out = (_error_entry*)byte_allocator::resize(new_count * sizeof(_error_entry),
+		err_out, MEM->header.ALLOC_COUNTS[MEM_slider_fallback]);
+
+	err_out[new_count - 1] = _error_entry{
+		.line = p,
+		.object = (_object_header*)object
+	};
+
+}
+
+
+#include "Parse_7_time.h"
+#include "Parse_6_time.h"
+#include "Parse_5_time.h"
+#include "Parse_4_time.h"
+
+#include "Parse_Slider.h"
+#include "Parse_Spinner.h"
+
+#include "Parse_Slider_General.h"
+
+#include <thread>
+#include <chrono>
+
+#include <cstdlib>
 
 template <auto parse_func>
 __declspec(noinline) u64 parse_object_loop(
@@ -630,69 +679,57 @@ const char* find_hitobjects_line(const char* const start, const char* const end)
 
 #include "Parse_File_Header.h"
 
-void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __restrict p, char const* __restrict end) {
+void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const* __restrict p, char const* __restrict end) {
 
 	if (MEM == 0)
 		return;
 
-	MEM->note_count = 0;
-	MEM->timing_point_count = 0;
-
-	if (MEM->object_header == nullptr)
-		MEM->init_memory();
-
-	((_object_header_error*)MEM->object_header)->error_count = 0;
-	((_object_header_error*)MEM->object_body)->error_count = 0;
+	ZeroMemory(MEM->ELEM_COUNT, sizeof(MEM->ELEM_COUNT));
 
 	{
 
 		const auto file_size{ (end - p) };
 
-		auto* new_lines = (const char**)byte_allocator::resize(
-			sizeof(const char*) * (file_size + 4), MEM->lines, MEM->ALLOC_lines);
-
 		//64mb is the max size accepted - fail on any file above that size
-		if (new_lines == nullptr)
+		if (byte_allocator::resize(sizeof(char*) * (file_size + 4),
+			MEM->get_lines(), MEM->ALLOC_COUNTS[MEM_lines]) == nullptr)
 			return;
-
-		MEM->lines = new_lines;	
 
 		const u64 max_slider_points = file_size >> 2;
 
-		MEM->SLIDER_PATHS = (slider_point*)byte_allocator::resize(
-			sizeof(slider_point) * max_slider_points, MEM->SLIDER_PATHS, MEM->ALLOC_slider_path);
+		byte_allocator::resize( sizeof(_slider_point) * max_slider_points,
+			MEM->get_slider_path(), MEM->ALLOC_COUNTS[MEM_slider_path]);
 
-		MEM->timing_points = (_timing_point*)byte_allocator::resize(
-			sizeof(_timing_point) * max_slider_points, MEM->timing_points, MEM->ALLOC_timing_points);
+		byte_allocator::resize( sizeof(_timing_point) * max_slider_points, 
+			MEM->get_timing_point(), MEM->ALLOC_COUNTS[MEM_timing_point]);
 
 		//X,X,X,XN
 		const u32 max_notes = file_size >> 3;
 
-		MEM->object_header = (_object_header*)byte_allocator::resize(
-			sizeof(_object_header) * max_notes, MEM->object_header, MEM->ALLOC_object_header);
+		byte_allocator::resize(sizeof(_object_header) * max_notes,
+			MEM->get_object_header(), MEM->ALLOC_COUNTS[MEM_object_header]);
 
-		MEM->object_body = (_object_body*)byte_allocator::resize(
-			sizeof(_object_body) * max_notes, MEM->object_body, MEM->ALLOC_object_body);
+		byte_allocator::resize(sizeof(_object_body) * max_notes,
+			MEM->get_object_body(), MEM->ALLOC_COUNTS[MEM_object_body]);
 
 		//TODO figure out minimum slider length i should accept
 
-		MEM->slider_defer_table = (_slider_deferral*)byte_allocator::resize(
-			sizeof(_slider_deferral) * max_notes, MEM->slider_defer_table, MEM->ALLOC_slider_defer);
-
+		byte_allocator::resize(sizeof(_slider_deferral) * max_notes,
+			MEM->get_slider_defer(), MEM->ALLOC_COUNTS[MEM_slider_defer]);
 
 	}
 
 	const auto nl = _mm256_set1_epi8('\n');
 
-	_object_header* object_ptr{ ((_object_header*)MEM->object_header) +1 };
-	_slider_data* object_data_ptr{ (_slider_data*)(MEM->object_body+1) };
+	_object_header* object_ptr{ MEM->get_object_header() };
+	_slider_data* object_data_ptr{ MEM->get_object_body() };
 
-	slider_point* slider_ptr{ MEM->SLIDER_PATHS };
+	_slider_point* slider_ptr{ MEM->get_slider_path() };
 
-	const char** line_ptr{ MEM->lines };
-	const char** line_ptr_end{ MEM->lines };
+	const char** line_ptr{ MEM->get_lines() };
+	const char** line_ptr_end{ line_ptr };
 
-	auto* slider_defer_table{ MEM->slider_defer_table };
+	auto* slider_defer_table{ MEM->get_slider_defer() };
 
 	{ // parse all the new lines for now, should skip [Events] unless we specifically want them in the future though.
 
@@ -756,12 +793,11 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 		*line_ptr++ = nullptr;
 		*line_ptr = nullptr;
 
-		line_ptr = MEM->lines;
+		line_ptr = MEM->get_lines();
 
 		_mm256_zeroupper();
 
 	}
-
 
 	line_ptr = parse_beatmap_header(MEM, line_ptr, line_ptr_end);
 
@@ -784,11 +820,12 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 			//for (size_t CRANK{}; CRANK < 100000; ++CRANK)
 			{
-				object_ptr = ((_object_header*)MEM->object_header) + 1;
-				object_data_ptr = (_slider_data*)(MEM->object_body+1);
-				slider_ptr = MEM->SLIDER_PATHS;
-				slider_defer_table = MEM->slider_defer_table;
-				//line_ptr = MEM->lines;
+
+				object_ptr = MEM->get_object_header();
+				object_data_ptr = MEM->get_object_body();
+				slider_ptr = MEM->get_slider_path();
+				slider_defer_table = MEM->get_slider_defer();
+
 
 				for (;;) {
 
@@ -920,7 +957,7 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 				// error table
 
 				{ // calc slider paths
-					for (auto* d = MEM->slider_defer_table; d != slider_defer_table; ++d) {
+					for (auto* d = MEM->get_slider_defer(); d != slider_defer_table; ++d) {
 
 						d->p = parse_slider_path(d->p, slider_ptr, d->out);
 
@@ -933,7 +970,7 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 					//double last{ 0. }; u64 check{};
 
-					for (const auto* d = MEM->slider_defer_table; d != slider_defer_table; ++d) {
+					for (const auto* d = MEM->get_slider_defer(); d != slider_defer_table; ++d) {
 
 						if (d->p == nullptr) [[unlikely]]
 							continue;
@@ -956,25 +993,24 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 				{ // fall back general cases
 
-					auto* error_header = (_object_header_error*)(MEM->object_body);
+					const auto* error_header = MEM->get_slider_fallback();
+					const auto*const error_header_end = error_header + MEM->ELEM_COUNT[MEM_slider_fallback];
 
 					//if (error_header->error_count) printf("CORRECTIONS:%i\n", error_header->error_count);
 
-					for (size_t i{}, size{ error_header->error_count }; i < size; ++i) {
+					for (; error_header != error_header_end; ++error_header) {
 
-						auto* v = error_header->error_out + i;
-
-						const auto ret = general_parse_slider_points(v->line, slider_ptr, (_slider_data*)v->object);
+						const auto ret = general_parse_slider_points(error_header->line, slider_ptr, (_slider_data*)error_header->object);
 
 						if (ret == 0)[[unlikely]] // fully corrupted slider data, abort map?
 							return;
 
-						slider_ptr = ((_slider_data*)v->object)->point_end;
+						slider_ptr = ((_slider_data*)error_header->object)->point_end;
 
 
 					}
 
-					error_header->error_count = 0;
+					//error_header->error_count = 0;
 
 				}				
 
@@ -985,9 +1021,7 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 
 	}
 
-	MEM->note_count = object_ptr - ((_object_header*)(
-		(size_t)MEM->object_header & POINTER_RESET_MASK
-		)+1);
+	MEM->ELEM_COUNT[MEM_object_header] = object_ptr - MEM->get_object_header();
 
 	return;
 }
@@ -998,8 +1032,8 @@ void parse_beatmap_from_memory(_memory_region* __restrict MEM, char const* __res
 void run_test_folder() {
 
 	//return;
-
-	_memory_region MR{}; MR.init_memory();
+	
+	_memory_region_new* MR{ create_memory_region() };
 
 	u32 XOR_TOTAL{};
 	u32 COUNT{};
@@ -1039,7 +1073,7 @@ void run_test_folder() {
 			std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
 			//for (size_t CRANK{}; CRANK < 1000; ++CRANK)
-			parse_beatmap_from_memory(&MR, (char*)FILE_BUFFER.data(), (char*)FILE_BUFFER.data() + FILE_BUFFER.size() - 128);
+			parse_beatmap_from_memory(&MR->header, (char*)FILE_BUFFER.data(), (char*)FILE_BUFFER.data() + FILE_BUFFER.size() - 128);
 
 			//MR.print_map_data();
 
@@ -1052,11 +1086,11 @@ void run_test_folder() {
 
 			//printf("%s> %.2f\xE6s (%.2fns)\n", file_name.substr(file_name.find_last_of('/') + 1).c_str(), micro_seconds, nano_seconds / double(MR.note_count ? MR.note_count : 1));
 
-			XOR_TOTAL ^= (size_t)MR.object_body[593].slider.point_start;
-			XOR_TOTAL ^= (size_t)MR.object_header[4882].time;
-			XOR_TOTAL += XOR ^ MR.object_body[52].spinner.end_time;
-			XOR_TOTAL += MR.note_count;;
-			XOR_TOTAL += MR.headers.StackLeniency;
+			//XOR_TOTAL ^= (size_t)MRobject_body[593].slider.point_start;
+			//XOR_TOTAL ^= (size_t)MR.object_header[4882].time;
+			//XOR_TOTAL += XOR ^ MR.object_body[52].spinner.end_time;
+			//XOR_TOTAL += MR.note_count;;
+			//XOR_TOTAL += MR.headers.StackLeniency;
 		}
 
 		const auto duration = (u64)(std::chrono::duration_cast<std::chrono::nanoseconds>(total_elapsed_time).count());
@@ -1082,23 +1116,19 @@ int main() {
 	data.push_back('\n');
 	data.resize(data.size() + 128);
 
-	_memory_region MR{};
-	{	
-		//_Timer A{};
-		MR.init_memory();
-	}
+	_memory_region_new* MR{ create_memory_region(0) };
 
 	for (size_t warm_up{}; warm_up < 1000; ++warm_up)
-		parse_beatmap_from_memory(&MR, (char*)data.data(), (char*)data.data() + data.size() - 128);
+		parse_beatmap_from_memory(&MR->header, (char*)data.data(), (char*)data.data() + data.size() - 128);
 
 	u64 XOR{};
 	{
 		_Timer A{};
-		parse_beatmap_from_memory(&MR, (char*)data.data(), (char*)data.data() + data.size() - 128);
+		parse_beatmap_from_memory(&MR->header, (char*)data.data(), (char*)data.data() + data.size() - 128);
 	}
 
 	std::cin.get();
-	MR.print_map_data();
+	MR->header.print_map_data();
 
 	return 0;
 

@@ -43,9 +43,9 @@ __forceinline u32 parse_ascii_SWAR(u64 x, u32 digits) {
 }
 
 template<bool is_under_v8>
-const char** parse_timing_points(_memory_region* __restrict MEM, const char** __restrict start, const char** const __restrict end) {
+const char** parse_timing_points(_memory_region_header* __restrict MEM, const char** __restrict start, const char** const __restrict end) {
 
-	_timing_point* timing_point{ MEM->timing_points };
+	_timing_point* timing_point{ MEM->get_timing_point()};
 
 	float last_anchor{ 0.f };
 	double last_values[2]{ -1.,-1. };
@@ -122,59 +122,57 @@ const char** parse_timing_points(_memory_region* __restrict MEM, const char** __
 
 	}
 
-	MEM->timing_point_count = timing_point - MEM->timing_points;
+	MEM->ELEM_COUNT[MEM_timing_point] = timing_point - MEM->get_timing_point();
 
 	return start;
 }
 
-const char** parse_headers_key_index(_memory_region* __restrict MEM,
+const char** parse_headers_key_index(_memory_region_header* __restrict MEM,
 	const char** __restrict start, const char** const __restrict end){
 
 
 
-
+	return 0;
 }
 
-
-
-const char** parse_beatmap_header(_memory_region*__restrict MEM, const char**__restrict start, const char** const __restrict end) {
+const char** parse_beatmap_header(_memory_region_header*__restrict MEM, const char**__restrict start, const char** const __restrict end) {
 
 	if (start == end)[[unlikely]]
 		return end;
+	
+	ZeroMemory(&MEM->osu_headers, sizeof(MEM->osu_headers));
 
-	ZeroMemory(&MEM->headers, sizeof(MEM->headers));
-
-	MEM->headers.ApproachRate = -1.f;
+	MEM->osu_headers.ApproachRate = -1.f;
 
 	if (const auto s{ *start }; load_u64(s) == str_to_u64("osu file format v")) [[likely]] {
 
-		MEM->headers.version_number = parse_integer_m3::expect_2(load_u32(s + sizeof("osu file format v") - 1));
+		MEM->osu_headers.version_number = parse_integer_m3::expect_2(load_u32(s + sizeof("osu file format v") - 1));
 
 	}
 
 	#define DO_SPACE(x) case str_to_u64(#x": "): \
-			MEM->headers.x = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
+			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
 			break;
 
 	#define DO_SPACE_32(x) case str_to_u32(#x": "): \
-			MEM->headers.x = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
+			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
 			break;
 
 	#define DO(x) case str_to_u64(#x":"): \
-			MEM->headers.x = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
+			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
 			break;
 
 	#define DO_32(x) case str_to_u32(#x":"): \
-			MEM->headers.x = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
+			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
 			break;
 
 	// can optimize this for the limited float digit count on the AR and stuff later, also doing int only for lower beatmap versions
 	#define DO_FLOAT(x) case str_to_u64(#x":"): \
-			MEM->headers.x = parse_double::from_ascii::NO_INLINE_parse_decimal_16(line_start + sizeof(#x ":") - 1);\
+			MEM->osu_headers.x = parse_double::from_ascii::NO_INLINE_parse_decimal_16(line_start + sizeof(#x ":") - 1);\
 			break;
 
 	#define DO_FLOAT_SPACE(x) case str_to_u64(#x": "): \
-			MEM->headers.x = parse_double::from_ascii::NO_INLINE_parse_decimal_16(line_start + sizeof(#x ": ") - 1);\
+			MEM->osu_headers.x = parse_double::from_ascii::NO_INLINE_parse_decimal_16(line_start + sizeof(#x ": ") - 1);\
 			break;
 
 	for (; start != end; ++start) {
@@ -261,10 +259,10 @@ const char** parse_beatmap_header(_memory_region*__restrict MEM, const char**__r
 
 	do_timing:
 
-	if (MEM->headers.ApproachRate == -1.)
-		MEM->headers.ApproachRate = MEM->headers.OverallDifficulty;
+	if (MEM->osu_headers.ApproachRate == -1.)
+		MEM->osu_headers.ApproachRate = MEM->osu_headers.OverallDifficulty;
 
-	if(MEM->headers.version_number < 8) [[likely]]
+	if(MEM->osu_headers.version_number < 8) [[likely]]
 		start = parse_timing_points<0>(MEM, start, end);
 	else 
 		start = parse_timing_points<1>(MEM, start, end);

@@ -1,7 +1,7 @@
 #pragma once
 
 u32 general_parse_slider_points(const char* __restrict p,
-	slider_point* __restrict slider_ptr, _slider_data* const __restrict r) {
+	_slider_point* __restrict slider_ptr, _slider_data* const __restrict r) {
 
 	r->point_start = slider_ptr;
 

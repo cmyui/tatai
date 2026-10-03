@@ -7,12 +7,17 @@
 #undef min
 #undef max
 
-constexpr size_t POINTER_RESET_MASK = ~((1 << 29) - 1);
+constexpr u64 POINTER_RESET_MASK = ~((1ull << 33) - 1ull);
 
 namespace byte_allocator {
 
 	static constexpr size_t MEM_MAX = 512ull * 1024ull * 1024ull; // 512mb
 	static constexpr size_t CHUNK_SIZE = 512ull * 1024ull; // 512kb - 128 pages of 4k
+
+
+	void* commit_memory(void* p, size_t size) {
+		return VirtualAlloc(p, size, MEM_COMMIT, PAGE_READWRITE);
+	}
 
 	__forceinline bool need_resize(size_t size, u32& bytes_alloc) {
 
@@ -74,5 +79,20 @@ namespace byte_allocator {
 
 		return resize(CHUNK_SIZE, r, bytes_alloc);
 	}
+
+	inline void* large_reserve() {
+
+		MEM_ADDRESS_REQUIREMENTS mer{
+			.Alignment = 1ull << 33
+		};
+
+		MEM_EXTENDED_PARAMETER param{
+			.Type = MemExtendedParameterAddressRequirements,
+			.Pointer = &mer
+		};
+
+		return VirtualAlloc2(GetCurrentProcess(), nullptr, 1ull << 33, MEM_RESERVE, PAGE_NOACCESS, &param, 1);
+	}
+
 
 };
