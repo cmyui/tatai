@@ -48,7 +48,7 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 	_timing_point* timing_point{ MEM->get_timing_point()};
 
-	float last_anchor{ 0.f };
+	double last_anchor{ 0. };
 	double last_values[2]{ -1.,-1. };
 
 	u32 digit_count{ 8 };
