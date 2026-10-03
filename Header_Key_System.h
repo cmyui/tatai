@@ -105,9 +105,16 @@ namespace header_key {
 	const char** parse_headers_key_index(_memory_region_header* __restrict MEM,
 		const char** __restrict start, const char** const __restrict end) {
 
-		if (const auto s{ *start++ }; load_u64(s) == str_to_u64("osu file format v")) [[likely]] {
+		MEM->version_number = 0;
 
-			MEM->version_number = parse_integer_m3::expect_2(load_u32(s + sizeof("osu file format v") - 1));
+		const char* first_line{ *start++ };
+
+		// skip anything before the format line, e.g. a UTF-8 BOM
+		for (const char* const limit{ first_line + 16 }; *first_line != 'o' && first_line != limit; ++first_line) {}
+
+		if (load_u64(first_line) == str_to_u64("osu file format v")) [[likely]] {
+
+			MEM->version_number = parse_integer_m3::expect_2(load_u32(first_line + sizeof("osu file format v") - 1));
 
 		}
 		//else return end;
