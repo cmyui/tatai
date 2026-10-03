@@ -78,10 +78,9 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		const auto digit_actual{ digit_count >> 3 };
 
-		const bool is_inherited = (line_start[digit_actual + 1] == '-');
+		line_start += digit_actual + 1;
 
-		line_start += digit_actual + 1 + is_inherited;
-
+		// the key starts at the sign so an inherited and an uninherited line never compare equal
 		const auto check = load_u64(line_start);
 
 		if (last_value == check)
@@ -89,9 +88,13 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		last_value = check;
 
+		const bool is_inherited = (*line_start == '-');
+
+		line_start += is_inherited;
+
 		timing_point->time = parse_ascii_SWAR(line64, digit_actual);
 
-		const auto f = u32(check) == str_to_u32("100,") ? 100. : parse_double::from_ascii::parse_decimal_16(line_start);
+		const auto f = u32(check >> (is_inherited * 8)) == str_to_u32("100,") ? 100. : parse_double::from_ascii::parse_decimal_16(line_start);
 
 		if (is_inherited) {
 
