@@ -166,9 +166,9 @@ namespace header_key {
 		do_timing: {
 		
 			if (MEM->version_number < 8)
-				start = parse_timing_points<0>(MEM, start, end);
-			else
 				start = parse_timing_points<1>(MEM, start, end);
+			else
+				start = parse_timing_points<0>(MEM, start, end);
 
 		}
 

@@ -100,22 +100,22 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 			timing_point->beat_length = last_anchor * (0.01 * f);
 
-			if constexpr (is_under_v8) {
-
-				timing_point->tick_beat_length = timing_point->beat_length;
-
-			} else {
-
-				timing_point->tick_beat_length = last_anchor;
-
-			}
-
 		} else {
 
 			timing_point->beat_length = f;
-			timing_point->tick_beat_length = f;
 
 			last_anchor = f;
+
+		}
+
+		// an uninherited line is its own anchor, so v8+ ticks always follow last_anchor
+		if constexpr (is_under_v8) {
+
+			timing_point->tick_beat_length = timing_point->beat_length;
+
+		} else {
+
+			timing_point->tick_beat_length = last_anchor;
 
 		}
 
