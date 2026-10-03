@@ -12,84 +12,86 @@ namespace slider_body_neg {
 	};
 
 	static_assert(sizeof(_NEGATIVE_INFO) == 32);
-	
 
 	constexpr auto NEGATIVE_INFO = [] {
 
 		struct _negative_info_tables {
+
 			std::array<_NEGATIVE_INFO, 128> table{};
+
 			std::array<u32, 128> validation{};
+
 		} output{};
 
-			for (auto& v : output.table)
-				v.consumed = (u32(16) << 24) | 1;
-			for (auto& v : output.validation)
-				v = u32(-1);
+		for (auto& v : output.table)
+			v.consumed = (u32(16) << 24) | 1;
+		for (auto& v : output.validation)
+			v = u32(-1);
 
+		for (u32 x_len{ 1 }; x_len < 4; ++x_len) {
+			for (u32 y_len{ 1 }; y_len < 4; ++y_len) {
+				for (u32 x_neg{}; x_neg < 2; ++x_neg) {
+					for (u32 y_neg{}; y_neg < 2; ++y_neg) {
 
-			for (u32 x_len{ 1 }; x_len < 4; ++x_len) {
-				for (u32 y_len{ 1 }; y_len < 4; ++y_len) {
-					for (u32 x_neg{}; x_neg < 2; ++x_neg) {
-						for (u32 y_neg{}; y_neg < 2; ++y_neg) {
+						if (!x_neg && !y_neg)
+							continue;
 
-							if (!x_neg && !y_neg)
-								continue;
+						const u32 x_start = x_neg;
 
-							const u32 x_start = x_neg;
+						const u32 colon = x_neg + x_len;
 
-							const u32 colon = x_neg + x_len;
+						const u32 y_start = colon + 1u + y_neg;
 
-							const u32 y_start = colon + 1u + y_neg;
+						const u32 end = y_start + y_len;
 
-							const u32 end = y_start + y_len;
+						const u32 first2 = (1u << colon) | (1u << end);
 
-							const u32 first2 = (1u << colon) | (1u << end);
+						u32 neg_bits{};
 
-							u32 neg_bits = 0;
+						if (x_neg)
+							neg_bits |= 1u;
 
-							if (x_neg)
-								neg_bits |= 1u;
+						if (y_neg)
+							neg_bits |= 1u << (colon + 1u);
 
-							if (y_neg)
-								neg_bits |= 1u << (colon + 1u);
+						const u32 key_in{ first2 | neg_bits };
 
-							const u32 key_in{ first2 | neg_bits };
+						const u32 key = pext_constexpr(key_in, 0b110111101);
 
-							const u32 key = pext_constexpr(key_in, 0b110111101);
+						output.validation[key] = key_in;
 
-							output.validation[key] = key_in;
+						auto& e = output.table[key];
 
-							auto& e = output.table[key];
+						for (auto& v : e.shuf)
+							v = 0x80;
 
-							for (auto& v : e.shuf)
-								v = 0x80;
+						const u32 x_dst = 4u - x_len;
 
-							const u32 x_dst = 4u - x_len;
+						for (u32 i{}; i < x_len; ++i)
+							e.shuf[x_dst + i] = u8(x_start + i);
 
-							for (u32 i{}; i < x_len; ++i)
-								e.shuf[x_dst + i] = u8(x_start + i);
+						const u32 y_dst = 8u - y_len;
 
-							const u32 y_dst = 8u - y_len;
+						for (u32 i{}; i < y_len; ++i)
+							e.shuf[y_dst + i] = u8(y_start + i);
 
-							for (u32 i{}; i < y_len; ++i)
-								e.shuf[y_dst + i] = u8(y_start + i);
+						e.consumed = (u32(end + 1u) << 24) | 1; // 1 is here to implicitly return +1
 
-							e.consumed = (u32(end + 1u) << 24) | 1; // 1 is here to implicitly return +1
+						e.sign_x = x_neg ? -1 : 1;
+						e.sign_y = y_neg ? -1 : 1;
 
-							e.sign_x = x_neg ? -1 : 1;
-							e.sign_y = y_neg ? -1 : 1;
+						//e.sign_bit = x_neg | (y_neg << 1);
 
-							//e.sign_bit = x_neg | (y_neg << 1);
-
-						}
 					}
 				}
 			}
+		}
 
-			return output;
-		}();
+		return output;
+	}();
 
-	__declspec(noinline) u32 parse_slider_point_negative(const char*__restrict p, _slider_point* __restrict const out, const u32 in, const u32 com) noexcept {
+	__declspec(noinline) u32 parse_slider_point_negative(const char*__restrict p,
+		_slider_point* __restrict const out, const u32 in, const u32 com) noexcept {
 
 		const auto input = _mm_loadu_si128((const __m128i*)p);
 		const auto digits = _mm_sub_epi8(input, _mm_set1_epi8('0'));
@@ -101,12 +103,12 @@ namespace slider_body_neg {
 
 		const auto key = (u32)_pext_u32(key_in, 0b000110111101u);
 
-		const auto& info = NEGATIVE_INFO.table[key];
-
 		if (NEGATIVE_INFO.validation[key] != key_in) [[unlikely]] {
 
 			return 0;
 		}
+
+		const auto& info = NEGATIVE_INFO.table[key];
 
 		const auto shuff =_mm_shuffle_epi8(digits, _mm_load_si128((const __m128i*)info.shuf.data()));
 

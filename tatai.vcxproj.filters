@@ -57,6 +57,9 @@
     <ClInclude Include="Parse_File_Header.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Header_Key_System.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source.cpp">

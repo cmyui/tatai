@@ -43,7 +43,8 @@ __forceinline u32 parse_ascii_SWAR(u64 x, u32 digits) {
 }
 
 template<bool is_under_v8>
-const char** parse_timing_points(_memory_region_header* __restrict MEM, const char** __restrict start, const char** const __restrict end) {
+const char** parse_timing_points(_memory_region_header* __restrict MEM,
+	const char** __restrict start, const char** const __restrict end) {
 
 	_timing_point* timing_point{ MEM->get_timing_point()};
 
@@ -127,52 +128,38 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM, const ch
 	return start;
 }
 
-const char** parse_headers_key_index(_memory_region_header* __restrict MEM,
-	const char** __restrict start, const char** const __restrict end){
+#include "Header_Key_System.h"
 
+const char** parse_beatmap_header(_memory_region_header*__restrict MEM,
+	const char**__restrict start, const char** const __restrict end) {
 
-
-	return 0;
-}
-
-const char** parse_beatmap_header(_memory_region_header*__restrict MEM, const char**__restrict start, const char** const __restrict end) {
-
-	if (start == end)[[unlikely]]
+	if (start == end) [[unlikely]]
 		return end;
-	
-	ZeroMemory(&MEM->osu_headers, sizeof(MEM->osu_headers));
 
-	MEM->osu_headers.ApproachRate = -1.f;
+	return header_key::parse_headers_key_index(MEM, start, end);
+
+	ZeroMemory(&MEM->osu_header_table, sizeof(MEM->osu_header_table));
 
 	if (const auto s{ *start }; load_u64(s) == str_to_u64("osu file format v")) [[likely]] {
 
-		MEM->osu_headers.version_number = parse_integer_m3::expect_2(load_u32(s + sizeof("osu file format v") - 1));
+		MEM->version_number = parse_integer_m3::expect_2(load_u32(s + sizeof("osu file format v") - 1));
 
 	}
 
 	#define DO_SPACE(x) case str_to_u64(#x": "): \
-			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
+			MEM->osu_header_table[header_id::x] = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
 			break;
 
 	#define DO_SPACE_32(x) case str_to_u32(#x": "): \
-			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
+			MEM->osu_header_table[header_id::x] = std::string_view(line_start + sizeof(#x ": ") - 1, line_size - (sizeof(#x ": ") - 1));\
 			break;
 
 	#define DO(x) case str_to_u64(#x":"): \
-			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
+			MEM->osu_header_table[header_id::x] = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
 			break;
 
 	#define DO_32(x) case str_to_u32(#x":"): \
-			MEM->osu_headers.x = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
-			break;
-
-	// can optimize this for the limited float digit count on the AR and stuff later, also doing int only for lower beatmap versions
-	#define DO_FLOAT(x) case str_to_u64(#x":"): \
-			MEM->osu_headers.x = parse_double::from_ascii::NO_INLINE_parse_decimal_16(line_start + sizeof(#x ":") - 1);\
-			break;
-
-	#define DO_FLOAT_SPACE(x) case str_to_u64(#x": "): \
-			MEM->osu_headers.x = parse_double::from_ascii::NO_INLINE_parse_decimal_16(line_start + sizeof(#x ": ") - 1);\
+			MEM->osu_header_table[header_id::x] = std::string_view(line_start + sizeof(#x ":") - 1, line_size - (sizeof(#x ":") - 1));\
 			break;
 
 	for (; start != end; ++start) {
@@ -188,12 +175,12 @@ const char** parse_beatmap_header(_memory_region_header*__restrict MEM, const ch
 			case str_to_u64("[Events]"): ++start; goto skip_events; break;
 			case str_to_u64("[TimingPoints]"): ++start; goto do_timing; break;
 
-			DO_FLOAT(HPDrainRate);
-			DO_FLOAT(CircleSize);
-			DO_FLOAT(OverallDifficulty);
-			DO_FLOAT(ApproachRate);
-			DO_FLOAT_SPACE(SliderMultiplier);
-			DO_FLOAT_SPACE(SliderTickRate);
+			DO(HPDrainRate);
+			DO(CircleSize);
+			DO(OverallDifficulty);
+			DO(ApproachRate);
+			DO_SPACE(SliderMultiplier);
+			DO_SPACE(SliderTickRate);
 
 			DO_SPACE(AudioFilename);
 			DO_SPACE(AudioLeadIn);
@@ -201,7 +188,7 @@ const char** parse_beatmap_header(_memory_region_header*__restrict MEM, const ch
 			DO_SPACE(Countdown);
 			//DO_SPACE(CountdownOffset);
 			DO_SPACE(SampleSet);
-			DO_FLOAT_SPACE(StackLeniency);
+			DO_SPACE(StackLeniency);
 			DO_SPACE(LetterboxInBreaks);
 			DO_SPACE(UseSkinSprites);
 			DO_SPACE(OverlayPosition);
@@ -243,8 +230,6 @@ const char** parse_beatmap_header(_memory_region_header*__restrict MEM, const ch
 	#undef DO_SPACE_32
 	#undef DO
 	#undef DO_32
-	#undef DO_FLOAT
-	#undef DO_FLOAT_SPACE
 
 	skip_events:
 
@@ -257,12 +242,9 @@ const char** parse_beatmap_header(_memory_region_header*__restrict MEM, const ch
 		break;
 	}
 
-	do_timing:
+do_timing:
 
-	if (MEM->osu_headers.ApproachRate == -1.)
-		MEM->osu_headers.ApproachRate = MEM->osu_headers.OverallDifficulty;
-
-	if(MEM->osu_headers.version_number < 8) [[likely]]
+	if(MEM->version_number < 8) [[likely]]
 		start = parse_timing_points<0>(MEM, start, end);
 	else 
 		start = parse_timing_points<1>(MEM, start, end);

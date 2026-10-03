@@ -214,6 +214,7 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Header_Key_System.h" />
     <ClInclude Include="Memory.h" />
     <ClInclude Include="Parse_4_time.h" />
     <ClInclude Include="Parse_5_time.h" />

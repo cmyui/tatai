@@ -77,7 +77,9 @@ constexpr u32 pext_constexpr(u32 v, u32 m) noexcept {
 }
 
 void read_file2(const char* file_name, std::vector<u8>& o) {
+
 	o.clear();
+
 	std::ifstream file(file_name, std::ios::binary | std::ios::ate | std::ios::in);
 
 	if (file.is_open() == 0) [[unlikely]]
@@ -403,47 +405,50 @@ struct _memory_region_header {
 
 	u32 ELEM_COUNT[MEM_REGION_COUNT];// this isnt always kept up to date, at least for now
 
-	struct _osu_header {
+	u32 version_number;
 
-		u32 version_number;
+	std::string_view osu_header_table[32];
 
-		float HPDrainRate;
-		float CircleSize;
-		float OverallDifficulty;
-		float ApproachRate;
-
-		double StackLeniency;
-		double SliderMultiplier;
-		double SliderTickRate;
-
-		std::string_view Mode;
-		std::string_view AudioFilename;
-		std::string_view AudioLeadIn;
-		std::string_view PreviewTime;
-		std::string_view Countdown;
-		std::string_view SampleSet;
-		std::string_view LetterboxInBreaks;
-		std::string_view UseSkinSprites;
-		std::string_view OverlayPosition;
-		std::string_view SkinPreference;
-		std::string_view EpilepsyWarning;
-		//std::string_view CountdownOffset;
-		std::string_view SpecialStyle;
-		std::string_view WidescreenStoryboard;
-		std::string_view SamplesMatchPlaybackRate;
-
-		std::string_view Title;
-		std::string_view TitleUnicode;
-		std::string_view Artist;
-		std::string_view ArtistUnicode;
-		std::string_view Creator;
-		std::string_view Version;
-		std::string_view Source;
-		std::string_view Tags;
-		std::string_view BeatmapID;
-		std::string_view BeatmapSetID;
-
-	} osu_headers;
+	//struct _osu_header {
+	//
+	//
+	//	float HPDrainRate;
+	//	float CircleSize;
+	//	float OverallDifficulty;
+	//	float ApproachRate;
+	//
+	//	double StackLeniency;
+	//	double SliderMultiplier;
+	//	double SliderTickRate;
+	//
+	//	std::string_view Mode;
+	//	std::string_view AudioFilename;
+	//	std::string_view AudioLeadIn;
+	//	std::string_view PreviewTime;
+	//	std::string_view Countdown;
+	//	std::string_view SampleSet;
+	//	std::string_view LetterboxInBreaks;
+	//	std::string_view UseSkinSprites;
+	//	std::string_view OverlayPosition;
+	//	std::string_view SkinPreference;
+	//	std::string_view EpilepsyWarning;
+	//	//std::string_view CountdownOffset;
+	//	std::string_view SpecialStyle;
+	//	std::string_view WidescreenStoryboard;
+	//	std::string_view SamplesMatchPlaybackRate;
+	//
+	//	std::string_view Title;
+	//	std::string_view TitleUnicode;
+	//	std::string_view Artist;
+	//	std::string_view ArtistUnicode;
+	//	std::string_view Creator;
+	//	std::string_view Version;
+	//	std::string_view Source;
+	//	std::string_view Tags;
+	//	std::string_view BeatmapID;
+	//	std::string_view BeatmapSetID;
+	//
+	//} osu_headers;
 
 	void print_map_data() {
 
@@ -1010,10 +1015,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 					}
 
-					//error_header->error_count = 0;
-
-				}				
-
+				}
 
 			}
 
@@ -1086,10 +1088,10 @@ void run_test_folder() {
 
 			//printf("%s> %.2f\xE6s (%.2fns)\n", file_name.substr(file_name.find_last_of('/') + 1).c_str(), micro_seconds, nano_seconds / double(MR.note_count ? MR.note_count : 1));
 
-			//XOR_TOTAL ^= (size_t)MRobject_body[593].slider.point_start;
-			//XOR_TOTAL ^= (size_t)MR.object_header[4882].time;
+			XOR_TOTAL ^= (size_t)MR->header.get_object_body()[593].point_start;
+			XOR_TOTAL ^= (size_t)MR->header.get_object_header()[4882].time;
 			//XOR_TOTAL += XOR ^ MR.object_body[52].spinner.end_time;
-			//XOR_TOTAL += MR.note_count;;
+			XOR_TOTAL += MR->header.ELEM_COUNT[MEM_object_header];
 			//XOR_TOTAL += MR.headers.StackLeniency;
 		}
 
