@@ -94,7 +94,7 @@ namespace parse_5_time {
 
 				shuf_base += 2;
 				// can only parse up to 2 digits of type, time eats into the other lane
-				consumed += 0b10000001u;// sets the flag to consume the 3rd digit                
+				consumed += 0b10000001u;// sets the flag to consume the 3rd digit
 
 			}
 		
