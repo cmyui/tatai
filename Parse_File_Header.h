@@ -78,8 +78,6 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		const auto digit_actual{ digit_count >> 3 };
 
-		timing_point->time = parse_ascii_SWAR(line64, digit_actual);
-
 		const bool is_inherited = (line_start[digit_actual + 1] == '-');
 
 		line_start += digit_actual + 1 + is_inherited;
@@ -90,6 +88,8 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 			continue;
 
 		last_value = check;
+
+		timing_point->time = parse_ascii_SWAR(line64, digit_actual);
 
 		const auto f = u32(check) == str_to_u32("100,") ? 100. : parse_double::from_ascii::parse_decimal_16(line_start);
 
