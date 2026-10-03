@@ -60,7 +60,6 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-typedef int32_t i32;
 typedef int64_t i64;
 
 constexpr u32 pext_constexpr(u32 v, u32 m) noexcept {
@@ -351,7 +350,7 @@ struct _object_body_buffer {
 
 struct _timing_point {
 	double beat_length, tick_beat_length;
-	i32 time;
+	int time;
 };
 
 constexpr u64 MEMORY_REGION_SIZE{ 512ull * 1024ull * 1024ull };
