@@ -60,14 +60,16 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		const auto line64 = load_u64(line_start);
 
-		if (line64 == str_to_u64("[HitObjects]"))
-			break;
-
 		{
 			const u8 is_first_digit = u8(*line_start) - u8('0');
 
-			if (is_first_digit > 9u)
+			if (is_first_digit > 9u) {
+
+				if (line64 == str_to_u64("[HitObjects]"))
+					break;
+
 				continue;
+			}
 
 		}
 
