@@ -36,67 +36,44 @@ enum header_id : u8 {
 
 namespace header_key {
 
-	struct _key {
-		std::string_view name;
-		header_id id;
-	};
+	alignas(64) inline constexpr auto HEADER_INFO = [] {
 
-	#define KEY(x) _key{ #x, header_id::x }
+		const auto pack = [](char first, u32 skip) {
+			return (u16(u8(first))) | u16(skip << 8);
+		};
 
-	inline constexpr _key KEYS[] = {
-		KEY(LetterboxInBreaks), KEY(Mode), KEY(WidescreenStoryboard), KEY(Title), KEY(AudioFilename),
-		KEY(StackLeniency), KEY(ArtistUnicode), KEY(PreviewTime), KEY(OverallDifficulty), KEY(UseSkinSprites),
-		KEY(ApproachRate), KEY(Version), KEY(SampleSet), KEY(OverlayPosition), KEY(Artist),
-		KEY(Countdown), KEY(Creator), KEY(HPDrainRate), KEY(BeatmapSetID), KEY(CircleSize),
-		KEY(Source), KEY(BeatmapID), KEY(Tags), KEY(SkinPreference), KEY(SliderTickRate),
-		KEY(AudioLeadIn), KEY(EpilepsyWarning), KEY(TitleUnicode), KEY(SamplesMatchPlaybackRate), KEY(SpecialStyle),
-		KEY(SliderMultiplier),
-	};
+		std::array<u16, 32> t{};
 
-	#undef KEY
+		t[0] = pack('L', 19);
 
-	// a line is hashed on its bytes before the ':', cut to the first 8, so a short key never hashes its value
-	constexpr u64 masked_key(std::string_view s) {
+		t[2] = pack('W', 22);
 
-		u64 ret{};
+		t[4] = pack('A', 15);
+		t[5] = pack('S', 15);
+		t[6] = pack('A', 14);
+		t[7] = pack('P', 13);
+		t[8] = pack('O', 18);
+		t[9] = pack('U', 16);
+		t[10] = pack('A', 13);
+		t[11] = pack('V', 8);
+		t[12] = pack('S', 11);
+		t[13] = pack('O', 17);
 
-		for (size_t i{}; i < s.size() && i < 8; ++i)
-			ret |= u64(u8(s[i])) << (i * 8);
+		t[15] = pack('C', 11);
+		t[16] = pack('C', 8);
+		t[17] = pack('H', 12);
+		t[18] = pack('B', 13);
+		t[19] = pack('C', 11);
 
-		return ret;
-	}
-
-	constexpr u32 key_slot(u64 key) {
-		return u32((key * 0x3d1c550f1692402full) >> 58);
-	}
-
-	// no masked line key can start with ':', so an empty slot never matches
-	constexpr u64 EMPTY_SLOT = u64(':');
-
-	struct _key_table {
-		u64 key[64];
-		u8 length[64];
-		u8 id[64];
-	};
-
-	alignas(64) inline constexpr auto KEY_TABLE = [] {
-
-		_key_table t{};
-
-		for (auto& k : t.key)
-			k = EMPTY_SLOT;
-
-		for (const auto& k : KEYS) {
-
-			const auto slot = key_slot(masked_key(k.name));
-
-			if (t.key[slot] != EMPTY_SLOT)
-				throw "two header keys share a slot, pick a new multiplier";
-
-			t.key[slot] = masked_key(k.name);
-			t.length[slot] = u8(k.name.size());
-			t.id[slot] = k.id;
-		}
+		t[21] = pack('B', 10);
+		t[23] = pack('S', 16);
+		t[24] = pack('S', 16);
+		t[25] = pack('A', 13);
+		t[26] = pack('E', 17);
+		t[27] = pack('T', 13);
+		t[28] = pack('S', 26);
+		t[29] = pack('S', 14);
+		t[31] = pack('S', 18);
 
 		return t;
 	}();
@@ -137,29 +114,47 @@ namespace header_key {
 				goto do_timing;
 			}
 
-			// the bytes before a ':' in the first 8
-			const u64 not_colon = key ^ 0x3a3a3a3a3a3a3a3aull;
-			const u64 colon_bits = _tzcnt_u64((not_colon - 0x0101010101010101ull) & ~not_colon & 0x8080808080808080ull);
-
-			const u64 masked = _bzhi_u64(key, u32(colon_bits) & ~7u);
-
-			const u32 slot = key_slot(masked);
-
-			const u32 key_length = KEY_TABLE.length[slot];
-
-			if (KEY_TABLE.key[slot] != masked || line_start[key_length] != ':')
-				continue;
-
 			const char* line_end = (start + 1 == end) ? *start : *(start + 1);
 
-			const char* value = line_start + key_length + 1;
+			// underflows on the last line, but this piece of code should not be here at EOF anyway.
+			const size_t line_size = (line_end - line_start) - 1;
 
-			value += (*value == ' ');
+			u32 index = u32((key * 0xa7c48ebd2da48d17ull) >> 59);
 
-			// keeps the trailing '\r'. underflows on the last line, but this piece of code should not be here at EOF anyway.
-			MEM->osu_header_table[KEY_TABLE.id[slot]] = {
-				value,
-				size_t((line_end - 1) - value)
+			const auto hi = HEADER_INFO[index];
+
+			u32 skip = hi >> 8;
+
+			// most invalidations is just empty new lines so u8 is enough, fits in one cache line with the skip info like this
+			if (u8(hi) != u8(key)) {
+
+				switch (u32(key)) {
+
+					case str_to_u32("Mode"):
+						index = 1; skip = 6;
+						break;
+					case str_to_u32("Title"):
+						index = 3; skip = 6;
+						break;
+					case str_to_u32("Artist"):
+						index = 14; skip = 7;
+						break;
+					case str_to_u32("Source"):
+						index = 20; skip = 7;
+						break;
+					case str_to_u32("Tags"):
+						index = 22; skip = 5;
+						break;
+
+				default:
+					continue;
+				}
+
+			}
+
+			MEM->osu_header_table[index] = {
+				line_start + skip,
+				line_size - skip
 			};
 
 		}
