@@ -75,18 +75,15 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 					continue;
 
 				// negative times only lead a section, so find the comma directly and leave digit_count to the positive times
-				const u32 time_end = _tzcnt_u32((u32)_mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128((__m128i const*)line_start), _mm_set1_epi8(','))));
-
-				const auto digits = load_u64(line_start + 1);
-
-				line_start += time_end + 1;
+				line_start += _tzcnt_u32((u32)_mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128((__m128i const*)line_start), _mm_set1_epi8(',')))) + 1;
 
 				check = load_u64(line_start);
 
 				if (last_value == check)
 					continue;
 
-				time = -int(parse_ascii_SWAR(digits, time_end - 1));
+				// negative times are stored as 0
+				time = 0;
 
 				goto parse_beat_length;
 			}
