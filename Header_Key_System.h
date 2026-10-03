@@ -88,13 +88,12 @@ namespace header_key {
 
 		for (const auto& k : KEYS) {
 
-			const auto key = masked_key(k.name);
-			const auto slot = key_slot(key);
+			const auto slot = key_slot(masked_key(k.name));
 
 			if (t.key[slot] != EMPTY_SLOT)
 				throw "two header keys share a slot, pick a new multiplier";
 
-			t.key[slot] = key;
+			t.key[slot] = masked_key(k.name);
 			t.length[slot] = u8(k.name.size());
 			t.id[slot] = k.id;
 		}
