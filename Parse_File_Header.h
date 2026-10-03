@@ -60,9 +60,6 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		const auto line64 = load_u64(line_start);
 
-		u64 check;
-		i32 time;
-
 		{
 			const u8 is_first_digit = u8(*line_start) - u8('0');
 
@@ -71,46 +68,23 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 				if (line64 == str_to_u64("[HitObjects]"))
 					break;
 
-				if (u8(line64) != '-')
-					continue;
-
-				// negative times only lead a section, so find the comma directly and leave digit_count to the positive times
-				const u32 time_end = _tzcnt_u32((u32)_mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128((__m128i const*)line_start), _mm_set1_epi8(','))));
-
-				const auto digits = load_u64(line_start + 1);
-
-				line_start += time_end + 1;
-
-				check = load_u64(line_start);
-
-				if (last_value == check)
-					continue;
-
-				time = -i32(parse_ascii_SWAR(digits, time_end - 1));
-
-				goto parse_beat_length;
+				continue;
 			}
 
 		}
 
-		{
-			while (digit_count < 64 && ((u8)(line64 >> digit_count) != ','))
-				digit_count += 8;
+		while (digit_count < 64 && ((u8)(line64 >> digit_count) != ','))
+			digit_count += 8;
 
-			const auto digit_actual{ digit_count >> 3 };
+		const auto digit_actual{ digit_count >> 3 };
 
-			line_start += digit_actual + 1;
+		line_start += digit_actual + 1;
 
-			// the key starts at the sign so an inherited and an uninherited line never compare equal
-			check = load_u64(line_start);
+		// the key starts at the sign so an inherited and an uninherited line never compare equal
+		const auto check = load_u64(line_start);
 
-			if (last_value == check)
-				continue;
-
-			time = parse_ascii_SWAR(line64, digit_actual);
-		}
-
-	parse_beat_length:
+		if (last_value == check)
+			continue;
 
 		last_value = check;
 
@@ -118,7 +92,7 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		line_start += is_inherited;
 
-		timing_point->time = time;
+		timing_point->time = parse_ascii_SWAR(line64, digit_actual);
 
 		const auto f = u32(check >> (is_inherited * 8)) == str_to_u32("100,") ? 100. : parse_double::from_ascii::parse_decimal_16(line_start);
 
