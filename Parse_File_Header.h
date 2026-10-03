@@ -61,7 +61,7 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 		const auto line64 = load_u64(line_start);
 
 		u64 check;
-		int time;
+		i32 time;
 
 		{
 			const u8 is_first_digit = u8(*line_start) - u8('0');
@@ -86,7 +86,7 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 				if (last_value == check)
 					continue;
 
-				time = -int(parse_ascii_SWAR(digits, time_end - 1));
+				time = -i32(parse_ascii_SWAR(digits, time_end - 1));
 
 				goto parse_beat_length;
 			}
