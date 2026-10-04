@@ -49,16 +49,15 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, _slider_poin
 
 		const u32 point_negative = negative & (end - 1u);
 
-		if (point_negative) {
+		const auto comma_mask{ (u32)_mm_movemask_epi8(comma_xmm) };
 
-			return slider_body_neg::parse_slider_point_negative(
-			  p, out, first2 | (point_negative << 16u),
-			  (u32)_mm_movemask_epi8(comma_xmm));
-		}
+		if (point_negative)
+			return slider_body_neg::parse_slider_point_negative(p, out,
+				first2 | (point_negative << 16u), comma_mask);
 
 		{
 
-			const auto clean_first4 = (u32)_pdep_u32(0b1111u, sep);
+			//const auto clean_first4 = (u32)_pdep_u32(0b1111u, sep);
 
 			const auto digits = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
 
@@ -79,7 +78,7 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, _slider_poin
 			unsigned long consumed;
 			_BitScanReverse(&consumed, first2);
 
-			return (1u | (1 << 24)) + (consumed << 24u);
+			return (1u | (1 << 24) | ((end & comma_mask) << 8u)) + (consumed << 24u);
 		}
 
 	}
@@ -188,11 +187,18 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 
 		++p;
 
-		while (*p != ',') {
+		u64 v = load_u64(p);
 
+		while (v && u8(v) != ',') {
 			r->slides *= 10;
 			r->slides += (p[0] & 0x0f);
+			v >>= 8;
 			++p;
+		}
+
+		if (v == 0) [[unlikely]] {
+			push_error_slider_body_list(r);
+			return nullptr;
 		}
 
 	++p;

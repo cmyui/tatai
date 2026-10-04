@@ -47,6 +47,7 @@ u32 general_parse_slider_points(const char* __restrict p,
 
 	if (*p != ',')
 		return 0;
+
 	{
 
 		const auto [slides, slides_end] {consume_digits_read(p+1)};
@@ -58,7 +59,6 @@ u32 general_parse_slider_points(const char* __restrict p,
 
 	if (*p != ',')
 		return 0;
-
 
 	r->length = parse_double::from_ascii::parse_decimal_16(p+1);
 

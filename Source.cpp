@@ -409,46 +409,31 @@ struct _memory_region_header {
 
 	std::string_view osu_header_table[32];
 
-	//struct _osu_header {
-	//
-	//
-	//	float HPDrainRate;
-	//	float CircleSize;
-	//	float OverallDifficulty;
-	//	float ApproachRate;
-	//
-	//	double StackLeniency;
-	//	double SliderMultiplier;
-	//	double SliderTickRate;
-	//
-	//	std::string_view Mode;
-	//	std::string_view AudioFilename;
-	//	std::string_view AudioLeadIn;
-	//	std::string_view PreviewTime;
-	//	std::string_view Countdown;
-	//	std::string_view SampleSet;
-	//	std::string_view LetterboxInBreaks;
-	//	std::string_view UseSkinSprites;
-	//	std::string_view OverlayPosition;
-	//	std::string_view SkinPreference;
-	//	std::string_view EpilepsyWarning;
-	//	//std::string_view CountdownOffset;
-	//	std::string_view SpecialStyle;
-	//	std::string_view WidescreenStoryboard;
-	//	std::string_view SamplesMatchPlaybackRate;
-	//
-	//	std::string_view Title;
-	//	std::string_view TitleUnicode;
-	//	std::string_view Artist;
-	//	std::string_view ArtistUnicode;
-	//	std::string_view Creator;
-	//	std::string_view Version;
-	//	std::string_view Source;
-	//	std::string_view Tags;
-	//	std::string_view BeatmapID;
-	//	std::string_view BeatmapSetID;
-	//
-	//} osu_headers;
+	u8 lines_skipped;
+
+	void remove_invalid_lines() {
+
+		u32 note_count{ ELEM_COUNT[MEM_object_header] };
+
+		auto* obj = get_object_header();
+		auto* slider = get_object_body();
+
+		for (size_t i{}; i < note_count; ++i) {
+
+			if (obj[i].time != u32(-1) && ((obj[i].type & 2) && slider[i].slides != 0))
+				continue;
+
+			std::memmove(obj + i, obj + i + 1, (note_count - i - 1) * sizeof(*obj));
+			std::memmove(slider + i, slider + i + 1, (note_count - i - 1) * sizeof(*slider));
+
+			--i;
+			--note_count;
+
+		}
+
+		ELEM_COUNT[MEM_object_header] = note_count;
+
+	}
 
 	void print_map_data() {
 
@@ -690,6 +675,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 		return;
 
 	ZeroMemory(MEM->ELEM_COUNT, sizeof(MEM->ELEM_COUNT));
+	MEM->lines_skipped = 0;
 
 	{
 
@@ -1007,8 +993,13 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 						const auto ret = general_parse_slider_points(error_header->line, slider_ptr, (_slider_data*)error_header->object);
 
-						if (ret == 0)[[unlikely]] // fully corrupted slider data, abort map?
-							return;
+						if (ret == 0) [[unlikely]] {
+
+							MEM->lines_skipped = 1;
+
+							((_slider_data*)error_header->object)->slides = 0;
+
+						}
 
 						slider_ptr = ((_slider_data*)error_header->object)->point_end;
 
@@ -1024,6 +1015,11 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 	}
 
 	MEM->ELEM_COUNT[MEM_object_header] = object_ptr - MEM->get_object_header();
+
+	if (MEM->lines_skipped) [[unlikely]] {
+		//MEM->remove_invalid_lines();
+	}
+
 
 	return;
 }
@@ -1114,6 +1110,7 @@ int main() {
 	//return 0;
 
 	auto data = read_file("within_objects.txt");
+	//auto data = read_file("../fast_beatmap_load/map/maps/1315279.osu");
 
 	data.push_back('\n');
 	data.resize(data.size() + 128);
