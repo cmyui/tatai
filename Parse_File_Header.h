@@ -27,11 +27,9 @@ consteval u32 str_to_u32(std::string_view s) {
 }
 
 
-__forceinline u32 parse_ascii_SWAR(u64 x, const u32 digits) {
-	
-	//if (digits == 0) [[unlikely]] return 0;
+__forceinline u32 parse_ascii_SWAR(u64 x, const u32 bits) {
 
-	x = _shlx_u64(x, (8u - digits) * 8u);
+	x = _shlx_u64(x, 0 - bits);
 
 	x &= 0x0f0f0f0f0f0f0f0full;
 
@@ -108,8 +106,7 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 				continue;
 
 			last_value = _check;
-
-			timing_point->time = parse_ascii_SWAR(line64, digit_actual);
+			timing_point->time = parse_ascii_SWAR(line64, digit_count);
 
 		}
 
