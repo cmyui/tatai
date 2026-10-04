@@ -63,7 +63,7 @@ namespace parse_4_time {
 	}();
 
 	inline constexpr u8 const* SHUF_XY_INDEX{ SHUF_XY_STORAGE.data() + 64 - 10 };
-
+	
 	__forceinline u32 parse_object_4digit_single(const char* __restrict p, _object_header* const __restrict out_object) {
 
 		const auto m0 = _mm_loadu_si128((__m128i const*)p);
@@ -83,7 +83,8 @@ namespace parse_4_time {
 			return 0u;
 		}
 
-		const auto digits = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
+		const auto digits = _mm_sub_epi8(m0, _mm_set1_epi8('0'));		
+
 
 		u32 consumed = u8(tbl_data);
 		u32 shuf_base = tbl_data >> 8u;
@@ -107,12 +108,28 @@ namespace parse_4_time {
 		const u64* const tbl = (u64 const*)SHUF_TBL4;
 		const auto shuf = _mm_load_si128((__m128i const*)(tbl + shuf_base));
 
+		const auto has_negative = (u32)_mm_movemask_epi8(digits);
+
 		const auto pair = _mm_maddubs_epi16(_mm_shuffle_epi8(digits, shuf), 
 			_mm_setr_epi8(10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1));
 
-		const auto result = _mm_madd_epi16(pair, _mm_setr_epi16(100, 1, 100, 1, 100, 1, 100, 1));
+		auto result = _mm_madd_epi16(pair, _mm_setr_epi16(100, 1, 100, 1, 100, 1, 100, 1));
+
+		result = _mm_min_epu32(result, _mm_setr_epi32(512, 512, -1, -1));
 
 		_mm_store_si128((__m128i*)out_object, result);
+
+		if ((has_negative & ~v) != 0) [[unlikely]] {
+
+			// a is character below '0' - while not being a comma
+			// relevent cases are '-' and '.' (in the future)
+
+			const auto y_start = (u32)_tzcnt_u32(xy_pair);
+
+			if (p[0] == '-') out_object->x = 0;
+			if (p[y_start+1] == '-') out_object->y = 0;
+
+		}
 
 		if (consumed > 2) [[likely]] {
 

@@ -151,9 +151,10 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 	}
 
 	r->curve_type = *p;
+
 	p += 2;
 
-	r->point_end = (_slider_point*)size_t(p); // Should be safe, we write over this again in all cases except the error
+	r->point_end = (_slider_point*)size_t(p); // should be safe, we write over this again in all cases except the error
 
 	r->point_start = slider_ptr;
 

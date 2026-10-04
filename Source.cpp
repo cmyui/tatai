@@ -342,12 +342,6 @@ size_t is_valid_slider_type(u32 v) {
 
 #include "Memory.h"
 
-constexpr u32 MAX_NOTES{ (1 << 15)-1 };
-
-struct _object_body_buffer {
-	_object_body objects[MAX_NOTES];
-};
-
 struct _timing_point {
 	double beat_length, tick_beat_length;
 	u32 time;
@@ -356,7 +350,16 @@ struct _timing_point {
 constexpr u64 MEMORY_REGION_SIZE{ 512ull * 1024ull * 1024ull };
 constexpr u64 MEMORY_CHUNK_SIZE = 512ull * 1024ull; // 512kb - 128 pages of 4k
 
+enum parse_flags : u32 {
+
+	PARSE_FULL_HEADER = 1 << 1,
+	PARSE_VALIDATE_TIME = 1 << 2,
+	PARSE_NO_PRE_ALLOC = 1 << 3,
+
+};
+
 enum memory_region_enum : u64{
+
 	MEM_header = 0,
 
 	MEM_lines,
@@ -409,6 +412,8 @@ struct _memory_region_header {
 
 	std::string_view osu_header_table[32];
 
+	u32 compile_flags;
+
 	u8 lines_skipped;
 
 	void remove_invalid_lines() {
@@ -420,7 +425,7 @@ struct _memory_region_header {
 
 		for (size_t i{}; i < note_count; ++i) {
 
-			if (obj[i].time != u32(-1) && ((obj[i].type & 2) && slider[i].slides != 0))
+			if (0 == (obj[i].time == u32(-1) || ((obj[i].type & 2) && slider[i].point_start == nullptr)))
 				continue;
 
 			std::memmove(obj + i, obj + i + 1, (note_count - i - 1) * sizeof(*obj));
@@ -472,7 +477,7 @@ struct _memory_region_new {
 
 }; static_assert(sizeof(_memory_region_new) == 4096);
 
-_memory_region_new* create_memory_region(bool dont_pre_alloc = 0) {
+_memory_region_new* create_memory_region(u32 flags = 0) {
 
 	// reserve 8GB of memory - each region can grow to a max of 512mb
 	auto* base_addr = byte_allocator::large_reserve();
@@ -482,8 +487,9 @@ _memory_region_new* create_memory_region(bool dont_pre_alloc = 0) {
 	ZeroMemory(MR, sizeof(_memory_region_new));
 
 	MR->header.ALLOC_COUNTS[0] = sizeof(_memory_region_new);
+	MR->header.compile_flags = flags;
 
-	if (dont_pre_alloc)
+	if (flags & PARSE_NO_PRE_ALLOC)
 		return MR;
 
 	for (u64 i{ (u64)MEM_lines }; i <= (u64)MEM_slider_path; ++i) {
@@ -537,7 +543,6 @@ __declspec(noinline) void push_error_slider_body_list(_slider_data* const object
 
 }
 
-
 #include "Parse_7_time.h"
 #include "Parse_6_time.h"
 #include "Parse_5_time.h"
@@ -577,7 +582,7 @@ __declspec(noinline) u64 parse_object_loop(
 			break;
 
 		*defer = { p + con, object_data };
-		defer += (object->type >> 1) & 1;
+		defer = (_slider_deferral*)((u8*)defer + ((object->type & 2u) << 3));
 
 		++pos;
 		++object;
@@ -877,7 +882,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 				parse4: //if (*line_ptr == nullptr) goto parse_finished;
 
 					{
-
+						
 						const auto res = parse_object_loop<parse_4_time::parse_object_4digit_single>(line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
 						slider_defer_table += u32(res >> 32);
@@ -913,7 +918,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 					// only pair that wins for now
 					//const auto res = PAIR_parse_object_loop<parse_6_time::parse_object_6digit_pair>(
 					const auto res = parse_object_loop<parse_6_time::parse_object_6digit_single>(
-						line_ptr, object_ptr, object_data_ptr, slider_defer_table);
+							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
 					slider_defer_table += u32(res >> 32);
 
@@ -991,13 +996,15 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 					for (; error_header != error_header_end; ++error_header) {
 
-						const auto ret = general_parse_slider_points(error_header->line, slider_ptr, (_slider_data*)error_header->object);
+						auto* sd{ (_slider_data*)error_header->object };
+
+						const auto ret = general_parse_slider_points(error_header->line, slider_ptr, sd);
 
 						if (ret == 0) [[unlikely]] {
 
 							MEM->lines_skipped = 1;
-
-							((_slider_data*)error_header->object)->slides = 0;
+							sd->point_start = nullptr;
+							sd->point_end = nullptr;
 
 						}
 
@@ -1017,7 +1024,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 	MEM->ELEM_COUNT[MEM_object_header] = object_ptr - MEM->get_object_header();
 
 	if (MEM->lines_skipped) [[unlikely]] {
-		//MEM->remove_invalid_lines();
+		MEM->remove_invalid_lines();
 	}
 
 
@@ -1110,7 +1117,7 @@ int main() {
 	//return 0;
 
 	auto data = read_file("within_objects.txt");
-	//auto data = read_file("../fast_beatmap_load/map/maps/1315279.osu");
+	//auto data = read_file("test.osu");
 
 	data.push_back('\n');
 	data.resize(data.size() + 128);

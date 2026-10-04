@@ -140,7 +140,6 @@ namespace parse_6_time {
 			return 0;
 		}
 
-
 		u32 consumed = u8(tbl_data);
 		u32 shuf_base = tbl_data >> 8u;
 
@@ -161,15 +160,28 @@ namespace parse_6_time {
 		const u64* const tbl = (u64 const*)SHUF_TBL6.data();
 		const auto shuf = _mm_load_si128((__m128i const*)(tbl + shuf_base));
 
+		const auto has_negative = (u32)_mm_movemask_epi8(digits);
+
 		const auto inter0 = _mm_maddubs_epi16(_mm_shuffle_epi8(digits, shuf),
 			_mm_setr_epi8(0, 1, 10, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 10, 1));
 
 		const auto inter1 = _mm_madd_epi16(inter0, _mm_setr_epi16(100, 1, 10, 1, 100, 1, 1, 256));
 		const auto inter2 = _mm_shuffle_epi8(inter1, _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1));
 
-		const auto result = _mm_madd_epi16(inter2, _mm_setr_epi16(1, 0, 1, 0, 100, 1, 1, 0));
+		auto result = _mm_madd_epi16(inter2, _mm_setr_epi16(1, 0, 1, 0, 100, 1, 1, 0));
+
+		result = _mm_min_epu32(result, _mm_setr_epi32(512, 512, -1, -1));
 
 		_mm_store_si128((__m128i*)out_object, result);
+
+		if ((has_negative & ~v) != 0) [[unlikely]] {
+
+			const auto y_start = (u32)_tzcnt_u32(xy_pair);
+
+			if (p[0] == '-') out_object->x = 0;
+			if (p[y_start + 1] == '-') out_object->y = 0;
+
+		}
 
 		if (consumed >= 18) [[unlikely]] {
 
@@ -197,146 +209,146 @@ namespace parse_6_time {
 		}
 	}
 
-	__declspec(noinline) u32 NO_INLINE_parse_object_6digit_single(const char* __restrict p,
-		_object_header* const __restrict out_object) {
-
-		return parse_object_6digit_single(p, out_object);
-	}
-
-	__forceinline u32 parse_object_6digit_pair( const char* __restrict p0, const char* __restrict p1,
-		_object_header*  __restrict out_object) {
-
-		const auto m0 = _mm_loadu_si128((__m128i const*)p0);
-		const auto m1 = _mm_loadu_si128((__m128i const*)p1);
-
-		const auto CMP0 = _mm_cmpeq_epi8(m0, _mm_set1_epi8(','));
-		const auto CMP1 = _mm_cmpeq_epi8(m1, _mm_set1_epi8(','));
-
-		const auto v0 = (u32)_mm_movemask_epi8(CMP0);
-		const auto v1 = (u32)_mm_movemask_epi8(CMP1);
-
-		const u32 xy_pair0 = (u8)v0;
-		const u32 xy_pair1 = (u8)v1;
-
-		if ((v0 & (xy_pair0 << 7)) == 0) [[unlikely]] {
-			return 0;
-		}
-
-		if ((v1 & (xy_pair1 << 7)) == 0) [[unlikely]] {
-			return NO_INLINE_parse_object_6digit_single(p0, out_object);
-		}
-
-		const auto digits0 = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
-		const auto digits1 = _mm_sub_epi8(m1, _mm_set1_epi8('0'));
-
-		u32 shuf_base0, consumed0;
-		u32 shuf_base1, consumed1;
-
-		{
-
-			const auto tbl_data0 = (u32)load_u16(SHUF_XY_INDEX2 + xy_pair0);
-			const auto tbl_data1 = (u32)load_u16(SHUF_XY_INDEX2 + xy_pair1);
-
-			consumed0 = u8(tbl_data0);
-			consumed1 = u8(tbl_data1);
-
-			shuf_base0 = tbl_data0 >> 8u;
-			shuf_base1 = tbl_data1 >> 8u;
-
-			// msvc baby sitting
-			if (*(p0 + consumed0 - 1) != ',') [[unlikely]] {
-
-				shuf_base0 += 2;
-
-				if (p0[consumed0++] != ',') [[unlikely]] {
-
-					shuf_base0 += 2;
-					consumed0 += 0b10000001u;
-
-				}
-
-			}
-
-			if (*(p1 + consumed1 - 1) != ',') [[unlikely]] {
-
-				shuf_base1 += 2;
-
-				if (p1[consumed1++] != ',') [[unlikely]] {
-
-					shuf_base1 += 2;
-					consumed1 += 0b10000001u;
-
-				}
-
-			}
-
-		}
-
-		const auto W0 = _mm_setr_epi8(0, 1, 10, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 10, 1);
-		const auto W1 = _mm_setr_epi16(100, 1, 10, 1, 100, 1, 1, 256);
-		const auto W2 = _mm_setr_epi16(1, 0, 1, 0, 100, 1, 1, 0);
-
-		const auto PAC = _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1);
-
-		const u64* const tbl = (u64 const*)SHUF_TBL6.data();
-
-		const auto shuf0 = _mm_shuffle_epi8(digits0, _mm_load_si128((__m128i const*)(tbl + shuf_base0)));
-		const auto shuf1 = _mm_shuffle_epi8(digits1, _mm_load_si128((__m128i const*)(tbl + shuf_base1)));
-
-		const auto inter0_0 = _mm_maddubs_epi16(shuf0, W0);
-		const auto inter0_1 = _mm_maddubs_epi16(shuf1, W0);
-
-		const auto inter1_0 = _mm_madd_epi16(inter0_0, W1);
-		const auto inter1_1 = _mm_madd_epi16(inter0_1, W1);
-
-		const auto inter2_0 = _mm_shuffle_epi8(inter1_0, PAC);
-		const auto inter2_1 = _mm_shuffle_epi8(inter1_1, PAC);
-
-		const auto result0 = _mm_madd_epi16(inter2_0, W2);
-		const auto result1 = _mm_madd_epi16(inter2_1, W2);
-
-		_mm_store_si128((__m128i*)out_object, result0);
-		_mm_store_si128((__m128i*)(out_object + 1), result1);
-
-		if (consumed0 >= 18) [[unlikely]] {
-
-			if (consumed0 == 18) [[likely]] {
-
-				out_object->type = out_object->type * 10u + (u8(p0[16]) & 0x0fu);
-
-			} else {
-
-				consumed0 &= 0b01111111u;
-
-				const u16 d = load_u16(p0 + consumed0 - 3);
-
-				out_object->type = out_object->type * 100u + (d & 0xfu) * 10u + ((d >> 8u) & 0xfu);
-
-			}
-
-		}
-
-		auto*const second_out = (out_object + 1);
-
-		if (consumed1 >= 18) [[unlikely]] {
-
-			if (consumed1 == 18) [[likely]] {
-
-				second_out->type = second_out->type * 10u + (u8(p1[16]) & 0x0fu);
-
-			} else {
-
-				consumed1 &= 0b01111111u;
-
-				const u16 d = load_u16(p1 + consumed1 - 3);
-
-				second_out->type = second_out->type * 100u + (d & 0xfu) * 10u + ((d >> 8u) & 0xfu);
-
-			}
-
-		}
-
-		return consumed0 | (consumed1 << 8);
-	}
+	//__declspec(noinline) u32 NO_INLINE_parse_object_6digit_single(const char* __restrict p,
+	//	_object_header* const __restrict out_object) {
+	//
+	//	return parse_object_6digit_single(p, out_object);
+	//}
+	//
+	//__forceinline u32 parse_object_6digit_pair( const char* __restrict p0, const char* __restrict p1,
+	//	_object_header*  __restrict out_object) {
+	//
+	//	const auto m0 = _mm_loadu_si128((__m128i const*)p0);
+	//	const auto m1 = _mm_loadu_si128((__m128i const*)p1);
+	//
+	//	const auto CMP0 = _mm_cmpeq_epi8(m0, _mm_set1_epi8(','));
+	//	const auto CMP1 = _mm_cmpeq_epi8(m1, _mm_set1_epi8(','));
+	//
+	//	const auto v0 = (u32)_mm_movemask_epi8(CMP0);
+	//	const auto v1 = (u32)_mm_movemask_epi8(CMP1);
+	//
+	//	const u32 xy_pair0 = (u8)v0;
+	//	const u32 xy_pair1 = (u8)v1;
+	//
+	//	if ((v0 & (xy_pair0 << 7)) == 0) [[unlikely]] {
+	//		return 0;
+	//	}
+	//
+	//	if ((v1 & (xy_pair1 << 7)) == 0) [[unlikely]] {
+	//		return NO_INLINE_parse_object_6digit_single(p0, out_object);
+	//	}
+	//
+	//	const auto digits0 = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
+	//	const auto digits1 = _mm_sub_epi8(m1, _mm_set1_epi8('0'));
+	//
+	//	u32 shuf_base0, consumed0;
+	//	u32 shuf_base1, consumed1;
+	//
+	//	{
+	//
+	//		const auto tbl_data0 = (u32)load_u16(SHUF_XY_INDEX2 + xy_pair0);
+	//		const auto tbl_data1 = (u32)load_u16(SHUF_XY_INDEX2 + xy_pair1);
+	//
+	//		consumed0 = u8(tbl_data0);
+	//		consumed1 = u8(tbl_data1);
+	//
+	//		shuf_base0 = tbl_data0 >> 8u;
+	//		shuf_base1 = tbl_data1 >> 8u;
+	//
+	//		// msvc baby sitting
+	//		if (*(p0 + consumed0 - 1) != ',') [[unlikely]] {
+	//
+	//			shuf_base0 += 2;
+	//
+	//			if (p0[consumed0++] != ',') [[unlikely]] {
+	//
+	//				shuf_base0 += 2;
+	//				consumed0 += 0b10000001u;
+	//
+	//			}
+	//
+	//		}
+	//
+	//		if (*(p1 + consumed1 - 1) != ',') [[unlikely]] {
+	//
+	//			shuf_base1 += 2;
+	//
+	//			if (p1[consumed1++] != ',') [[unlikely]] {
+	//
+	//				shuf_base1 += 2;
+	//				consumed1 += 0b10000001u;
+	//
+	//			}
+	//
+	//		}
+	//
+	//	}
+	//
+	//	const auto W0 = _mm_setr_epi8(0, 1, 10, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 10, 1);
+	//	const auto W1 = _mm_setr_epi16(100, 1, 10, 1, 100, 1, 1, 256);
+	//	const auto W2 = _mm_setr_epi16(1, 0, 1, 0, 100, 1, 1, 0);
+	//
+	//	const auto PAC = _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1);
+	//
+	//	const u64* const tbl = (u64 const*)SHUF_TBL6.data();
+	//
+	//	const auto shuf0 = _mm_shuffle_epi8(digits0, _mm_load_si128((__m128i const*)(tbl + shuf_base0)));
+	//	const auto shuf1 = _mm_shuffle_epi8(digits1, _mm_load_si128((__m128i const*)(tbl + shuf_base1)));
+	//
+	//	const auto inter0_0 = _mm_maddubs_epi16(shuf0, W0);
+	//	const auto inter0_1 = _mm_maddubs_epi16(shuf1, W0);
+	//
+	//	const auto inter1_0 = _mm_madd_epi16(inter0_0, W1);
+	//	const auto inter1_1 = _mm_madd_epi16(inter0_1, W1);
+	//
+	//	const auto inter2_0 = _mm_shuffle_epi8(inter1_0, PAC);
+	//	const auto inter2_1 = _mm_shuffle_epi8(inter1_1, PAC);
+	//
+	//	const auto result0 = _mm_madd_epi16(inter2_0, W2);
+	//	const auto result1 = _mm_madd_epi16(inter2_1, W2);
+	//
+	//	_mm_store_si128((__m128i*)out_object, result0);
+	//	_mm_store_si128((__m128i*)(out_object + 1), result1);
+	//
+	//	if (consumed0 >= 18) [[unlikely]] {
+	//
+	//		if (consumed0 == 18) [[likely]] {
+	//
+	//			out_object->type = out_object->type * 10u + (u8(p0[16]) & 0x0fu);
+	//
+	//		} else {
+	//
+	//			consumed0 &= 0b01111111u;
+	//
+	//			const u16 d = load_u16(p0 + consumed0 - 3);
+	//
+	//			out_object->type = out_object->type * 100u + (d & 0xfu) * 10u + ((d >> 8u) & 0xfu);
+	//
+	//		}
+	//
+	//	}
+	//
+	//	auto*const second_out = (out_object + 1);
+	//
+	//	if (consumed1 >= 18) [[unlikely]] {
+	//
+	//		if (consumed1 == 18) [[likely]] {
+	//
+	//			second_out->type = second_out->type * 10u + (u8(p1[16]) & 0x0fu);
+	//
+	//		} else {
+	//
+	//			consumed1 &= 0b01111111u;
+	//
+	//			const u16 d = load_u16(p1 + consumed1 - 3);
+	//
+	//			second_out->type = second_out->type * 100u + (d & 0xfu) * 10u + ((d >> 8u) & 0xfu);
+	//
+	//		}
+	//
+	//	}
+	//
+	//	return consumed0 | (consumed1 << 8);
+	//}
 
 }

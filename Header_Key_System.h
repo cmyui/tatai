@@ -78,16 +78,25 @@ namespace header_key {
 		return t;
 	}();
 
-
 	const char** parse_headers_key_index(_memory_region_header* __restrict MEM,
 		const char** __restrict start, const char** const __restrict end) {
 
-		if (const auto s{ *start++ }; load_u64(s) == str_to_u64("osu file format v")) [[likely]] {
+		{
 
-			MEM->version_number = parse_integer_m3::expect_2(load_u32(s + sizeof("osu file format v") - 1));
+			const auto* s = *start;
+			auto o_check = load_u64(s);
+
+			while (o_check && u8(o_check) != 'o') {
+				o_check >>= 8;
+				++s;
+			}
+
+			if (load_u64(s) == str_to_u64("osu file format v")) [[likely]]
+				MEM->version_number = parse_integer_m3::expect_2(load_u32(s + sizeof("osu file format v") - 1));
+			else
+				MEM->version_number = 0;
 
 		}
-		//else return end;
 
 		ZeroMemory(&MEM->osu_header_table, sizeof(MEM->osu_header_table));
 
@@ -96,6 +105,13 @@ namespace header_key {
 			const char* line_start = *start;
 
 			const u64 key{ load_u64(line_start) };
+
+			if (key == str_to_u64("[TimingPoints]")) {
+				++start;
+				goto do_timing;
+			}
+
+			continue;			
 			
 			if (key == str_to_u64("[Events]")) {
 				++start;

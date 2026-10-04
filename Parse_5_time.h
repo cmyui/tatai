@@ -103,6 +103,8 @@ namespace parse_5_time {
 		const u64* const tbl = (u64 const*)SHUF_TBL5;
 		const auto shuf = _mm_load_si128((__m128i const*)(tbl + shuf_base));
 
+		const auto has_negative = (u32)_mm_movemask_epi8(digits);
+
 		const auto pack = _mm_shuffle_epi8(digits, shuf);
 
 		const auto inter0 = _mm_maddubs_epi16(pack, _mm_setr_epi8(10, 1, 0, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 0, 1));
@@ -111,9 +113,21 @@ namespace parse_5_time {
 
 		const auto inter2 = _mm_shuffle_epi8(inter1, _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1));
 
-		const auto result = _mm_madd_epi16(inter2, _mm_setr_epi16(1, 0, 1, 0, 10, 1, 1, 0));
+		auto result = _mm_madd_epi16(inter2, _mm_setr_epi16(1, 0, 1, 0, 10, 1, 1, 0));
+
+
+		result = _mm_min_epu32(result, _mm_setr_epi32(512, 512, -1, -1));
 
 		_mm_store_si128((__m128i*)(out_object), result);
+
+		if ((has_negative & ~v) != 0) [[unlikely]] {
+
+			const auto y_start = (u32)_tzcnt_u32(xy_pair);
+
+			if (p[0] == '-') out_object->x = 0;
+			if (p[y_start + 1] == '-') out_object->y = 0;
+
+		}
 
 		if (consumed > 17) [[unlikely]] {
 
@@ -133,111 +147,110 @@ namespace parse_5_time {
 		}
 	}
 
-	__declspec(noinline) u32 NO_INLINE_parse_object_5digit_single(const char* __restrict p, _object_header* const __restrict out_object) {
-		return parse_object_5digit_single(p, out_object);
-	}
-
-	__forceinline u32 parse_object_5digit_pair(const char* __restrict p0, const char* __restrict p1,
-		_object_header* const __restrict out_object) {
-
-
-		const auto m0 = _mm_loadu_si128((__m128i const*)p0);
-		const auto m1 = _mm_loadu_si128((__m128i const*)p1);
-
-		const auto CMP0 = _mm_cmpeq_epi8(m0, _mm_set1_epi8(','));
-		const auto CMP1 = _mm_cmpeq_epi8(m1, _mm_set1_epi8(','));
-
-		const auto v0 = (u32)_mm_movemask_epi8(CMP0);
-		const auto v1 = (u32)_mm_movemask_epi8(CMP1);
-
-		const u32 xy_pair0 = u8(v0);
-		const u32 xy_pair1 = u8(v1);
-
-		auto tbl_data0 = (u32)load_u16(SHUF_XY_INDEX_5D + xy_pair0);
-		auto tbl_data1 = (u32)load_u16(SHUF_XY_INDEX_5D + xy_pair1);
-
-		if ((v0 & (xy_pair0 << 6u)) == 0) [[unlikely]] {
-			return 0;
-		}
-
-		if ((v1 & (xy_pair1 << 6u)) == 0) [[unlikely]] {
-			return NO_INLINE_parse_object_5digit_single(p0, out_object);
-		}
-
-		const auto digits0 = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
-		const auto digits1 = _mm_sub_epi8(m1, _mm_set1_epi8('0'));
-
-		u32 consumed0 = u8(tbl_data0);
-		u32 consumed1 = u8(tbl_data1);
-
-		u32 shuf_base0 = tbl_data0 >> 8u;
-		u32 shuf_base1 = tbl_data1 >> 8u;
-
-		if (((v0 >> 8u) & (xy_pair0 - 1u)) == 0) [[unlikely]] {
-
-			shuf_base0 += 2;
-
-			if (p0[consumed0++] != ',') [[unlikely]] {
-
-				shuf_base0 += 2;
-				consumed0 += 0b10000001u;
-
-			}
-
-		}
-
-		if (((v1 >> 8u) & (xy_pair1 - 1u)) == 0) [[unlikely]] {
-
-			shuf_base1 += 2;
-
-			if (p1[consumed1++] != ',') [[unlikely]] {
-
-				shuf_base1 += 2;
-				consumed1 += 0b10000001u;
-
-			}
-
-		}
-
-		const u64* const tbl = (u64 const*)SHUF_TBL5;
-		const auto shuf0 = _mm_load_si128((__m128i const*)(tbl + shuf_base0));
-		const auto shuf1 = _mm_load_si128((__m128i const*)(tbl + shuf_base1));
-
-		const auto pack0 = _mm_shuffle_epi8(digits0, shuf0);
-		const auto pack1 = _mm_shuffle_epi8(digits1, shuf1);
-
-		const auto inter0 = _mm_maddubs_epi16(pack0, _mm_setr_epi8(10, 1, 0, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 0, 1));
-		const auto inter1 = _mm_maddubs_epi16(pack1, _mm_setr_epi8(10, 1, 0, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 0, 1));
-
-		const auto inter1_0 = _mm_madd_epi16(inter0, _mm_setr_epi16(10, 1, 10, 1, 100, 1, 1, 256));
-		const auto inter1_1 = _mm_madd_epi16(inter1, _mm_setr_epi16(10, 1, 10, 1, 100, 1, 1, 256));
-
-		const auto inter2_0 = _mm_shuffle_epi8(inter1_0, _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1));
-		const auto inter2_1 = _mm_shuffle_epi8(inter1_1, _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1));
-
-		const auto result0 = _mm_madd_epi16(inter2_0, _mm_setr_epi16(1, 0, 1, 0, 10, 1, 1, 0));
-		const auto result1 = _mm_madd_epi16(inter2_1, _mm_setr_epi16(1, 0, 1, 0, 10, 1, 1, 0));
-
-		_mm_store_si128((__m128i*)(out_object), result0);
-		_mm_store_si128((__m128i*)(out_object+1), result1);
-
-		if (consumed0 > 17) [[unlikely]] {
-
-			consumed0 &= 0b01111111u;
-			out_object->type = out_object->type * 10u + (u8(p0[consumed0 - 2]) & 0x0fu);
-
-		}
-		if (consumed1 > 17) [[unlikely]] {
-
-			consumed1 &= 0b01111111u;
-			(out_object+1)->type = (out_object+1)->type * 10u + (u8(p1[consumed1 - 2]) & 0x0fu);
-
-		}
-
-
-		return consumed0 | (consumed1 << 8);
-
-
-	}
+	//__declspec(noinline) u32 NO_INLINE_parse_object_5digit_single(const char* __restrict p, _object_header* const __restrict out_object) {
+	//	return parse_object_5digit_single(p, out_object);
+	//}
+	//
+	//__forceinline u32 parse_object_5digit_pair(const char* __restrict p0, const char* __restrict p1,
+	//	_object_header* const __restrict out_object) {
+	//
+	//
+	//	const auto m0 = _mm_loadu_si128((__m128i const*)p0);
+	//	const auto m1 = _mm_loadu_si128((__m128i const*)p1);
+	//
+	//	const auto CMP0 = _mm_cmpeq_epi8(m0, _mm_set1_epi8(','));
+	//	const auto CMP1 = _mm_cmpeq_epi8(m1, _mm_set1_epi8(','));
+	//
+	//	const auto v0 = (u32)_mm_movemask_epi8(CMP0);
+	//	const auto v1 = (u32)_mm_movemask_epi8(CMP1);
+	//
+	//	const u32 xy_pair0 = u8(v0);
+	//	const u32 xy_pair1 = u8(v1);
+	//
+	//	auto tbl_data0 = (u32)load_u16(SHUF_XY_INDEX_5D + xy_pair0);
+	//	auto tbl_data1 = (u32)load_u16(SHUF_XY_INDEX_5D + xy_pair1);
+	//
+	//	if ((v0 & (xy_pair0 << 6u)) == 0) [[unlikely]] {
+	//		return 0;
+	//	}
+	//
+	//	if ((v1 & (xy_pair1 << 6u)) == 0) [[unlikely]] {
+	//		return NO_INLINE_parse_object_5digit_single(p0, out_object);
+	//	}
+	//
+	//	const auto digits0 = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
+	//	const auto digits1 = _mm_sub_epi8(m1, _mm_set1_epi8('0'));
+	//
+	//	u32 consumed0 = u8(tbl_data0);
+	//	u32 consumed1 = u8(tbl_data1);
+	//
+	//	u32 shuf_base0 = tbl_data0 >> 8u;
+	//	u32 shuf_base1 = tbl_data1 >> 8u;
+	//
+	//	if (((v0 >> 8u) & (xy_pair0 - 1u)) == 0) [[unlikely]] {
+	//
+	//		shuf_base0 += 2;
+	//
+	//		if (p0[consumed0++] != ',') [[unlikely]] {
+	//
+	//			shuf_base0 += 2;
+	//			consumed0 += 0b10000001u;
+	//
+	//		}
+	//
+	//	}
+	//
+	//	if (((v1 >> 8u) & (xy_pair1 - 1u)) == 0) [[unlikely]] {
+	//
+	//		shuf_base1 += 2;
+	//
+	//		if (p1[consumed1++] != ',') [[unlikely]] {
+	//
+	//			shuf_base1 += 2;
+	//			consumed1 += 0b10000001u;
+	//
+	//		}
+	//
+	//	}
+	//
+	//	const u64* const tbl = (u64 const*)SHUF_TBL5;
+	//	const auto shuf0 = _mm_load_si128((__m128i const*)(tbl + shuf_base0));
+	//	const auto shuf1 = _mm_load_si128((__m128i const*)(tbl + shuf_base1));
+	//
+	//	const auto pack0 = _mm_shuffle_epi8(digits0, shuf0);
+	//	const auto pack1 = _mm_shuffle_epi8(digits1, shuf1);
+	//
+	//	const auto inter0 = _mm_maddubs_epi16(pack0, _mm_setr_epi8(10, 1, 0, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 0, 1));
+	//	const auto inter1 = _mm_maddubs_epi16(pack1, _mm_setr_epi8(10, 1, 0, 1, 10, 1, 0, 1, 10, 1, 10, 1, 10, 1, 0, 1));
+	//
+	//	const auto inter1_0 = _mm_madd_epi16(inter0, _mm_setr_epi16(10, 1, 10, 1, 100, 1, 1, 256));
+	//	const auto inter1_1 = _mm_madd_epi16(inter1, _mm_setr_epi16(10, 1, 10, 1, 100, 1, 1, 256));
+	//
+	//	const auto inter2_0 = _mm_shuffle_epi8(inter1_0, _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1));
+	//	const auto inter2_1 = _mm_shuffle_epi8(inter1_1, _mm_setr_epi8(0, 1, -1, -1, 4, 5, -1, -1, 8, 9, 13, -1, 12, -1, -1, -1));
+	//
+	//	const auto result0 = _mm_madd_epi16(inter2_0, _mm_setr_epi16(1, 0, 1, 0, 10, 1, 1, 0));
+	//	const auto result1 = _mm_madd_epi16(inter2_1, _mm_setr_epi16(1, 0, 1, 0, 10, 1, 1, 0));
+	//
+	//	_mm_store_si128((__m128i*)(out_object), result0);
+	//	_mm_store_si128((__m128i*)(out_object+1), result1);
+	//
+	//	if (consumed0 > 17) [[unlikely]] {
+	//
+	//		consumed0 &= 0b01111111u;
+	//		out_object->type = out_object->type * 10u + (u8(p0[consumed0 - 2]) & 0x0fu);
+	//
+	//	}
+	//	if (consumed1 > 17) [[unlikely]] {
+	//
+	//		consumed1 &= 0b01111111u;
+	//		(out_object+1)->type = (out_object+1)->type * 10u + (u8(p1[consumed1 - 2]) & 0x0fu);
+	//
+	//	}
+	//
+	//
+	//	return consumed0 | (consumed1 << 8);
+	//
+	//}
 
 }
