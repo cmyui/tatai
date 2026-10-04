@@ -27,7 +27,9 @@ consteval u32 str_to_u32(std::string_view s) {
 }
 
 
-__forceinline u32 parse_ascii_SWAR(u64 x, u32 digits) {
+__forceinline u32 parse_ascii_SWAR(u64 x, const u32 digits) {
+	
+	//if (digits == 0) [[unlikely]] return 0;
 
 	x = _shlx_u64(x, (8u - digits) * 8u);
 
@@ -48,11 +50,12 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 	_timing_point* timing_point{ MEM->get_timing_point()};
 
-	float last_anchor{ 0.f };
+	double last_anchor{ 0. };
 	double last_values[2]{ -1.,-1. };
 
-	u32 digit_count{ 8 };
-	u64 last_value = 0;
+	u32 digit_count{ 8u };
+	u64 last_value{};
+	u64 _check{};
 
 	for (; start != end; ++start) {
 
@@ -60,59 +63,74 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		const auto line64 = load_u64(line_start);
 
-		if (line64 == str_to_u64("[HitObjects]"))
-			break;
+		{
+
+			const u8 first_digit = u8(*line_start) - u8('0');
+
+			if (first_digit > 9u) {
+
+				if (line64 == str_to_u64("[HitObjects]"))
+					break;
+
+				if(u8(line64) != (u8)'-')
+					continue;
+
+				timing_point->time = 0;				
+
+				auto c{ line64 };
+
+				line_start += 2;
+
+				while (c && u8(c >>= 8) != (u8)',')
+					++line_start;
+
+				// purposely dont update _check, there is likely to only be 1 negative number.
+				// even then, doing a bit of extra work only for negative timing points isnt a huge
+				// deal.
+
+				goto parse_beat_length;
+			}
+			
+		}
 
 		{
-			const u8 is_first_digit = u8(*line_start) - u8('0');
 
-			if (is_first_digit > 9u)
+			while (digit_count < 64 && ((u8)(line64 >> digit_count) != ','))
+				digit_count += 8;
+
+			const auto digit_actual{ digit_count >> 3 };
+
+			line_start += digit_actual + 1;
+
+			_check = load_u64(line_start);
+
+			if (last_value == _check)
 				continue;
+
+			last_value = _check;
+
+			timing_point->time = parse_ascii_SWAR(line64, digit_actual);
 
 		}
 
-		while (digit_count < 64 && ((u8)(line64 >> digit_count) != ','))
-			digit_count += 8;
+	parse_beat_length:
 
-		const auto digit_actual{ digit_count >> 3 };
+		const bool is_inherited = (*line_start == '-');
 
-		timing_point->time = parse_ascii_SWAR(line64, digit_actual);
+		line_start += is_inherited;
 
-		const bool is_inherited = (line_start[digit_actual + 1] == '-');
+		const auto f = u32(_check >> (is_inherited * 8)) == str_to_u32("100,") ? 100. : parse_double::from_ascii::parse_decimal_16(line_start);
 
-		line_start += digit_actual + 1 + is_inherited;
-
-		const auto check = load_u64(line_start);
-
-		if (last_value == check)
-			continue;
-
-		last_value = check;
-
-		const auto f = u32(check) == str_to_u32("100,") ? 100. : parse_double::from_ascii::parse_decimal_16(line_start);
-
-		if (is_inherited) {
-
-			timing_point->beat_length = last_anchor * (0.01 * f);
-
-			if constexpr (is_under_v8) {
-
-				timing_point->tick_beat_length = timing_point->beat_length;
-
-			} else {
-
-				timing_point->tick_beat_length = last_anchor;
-
-			}
-
-		} else {
+		if (is_inherited)
+			timing_point->beat_length = last_anchor * (0.01 * f);	
+		else {
 
 			timing_point->beat_length = f;
-			timing_point->tick_beat_length = f;
-
 			last_anchor = f;
 
 		}
+
+		timing_point->tick_beat_length = (is_under_v8) ? timing_point->beat_length : last_anchor;
 
 		const u32 is_different = (last_values[0] != timing_point->beat_length || last_values[1] != timing_point->tick_beat_length);
 
@@ -121,7 +139,7 @@ const char** parse_timing_points(_memory_region_header* __restrict MEM,
 
 		timing_point += is_different;
 
-	}
+	};
 
 	MEM->ELEM_COUNT[MEM_timing_point] = timing_point - MEM->get_timing_point();
 
@@ -245,9 +263,9 @@ const char** parse_beatmap_header(_memory_region_header*__restrict MEM,
 do_timing:
 
 	if(MEM->version_number < 8)
-		start = parse_timing_points<0>(MEM, start, end);
-	else 
 		start = parse_timing_points<1>(MEM, start, end);
+	else 
+		start = parse_timing_points<0>(MEM, start, end);
 
 	return start;
 }
