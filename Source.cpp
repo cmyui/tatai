@@ -235,6 +235,30 @@ namespace parse_integer_m3 {
 		return d0;
 	}
 
+	__forceinline u32 NEG_fixed_likely_3(u32 x, u32 digits) {
+
+		if (digits > 3) [[unlikely]]
+			return 512u;
+
+		if (u8(x) == '-') [[unlikely]]
+			return 0u;
+
+		x &= 0x0f0f0f0f;
+
+		const u32 d0 = u8(x);
+		const u32 d1 = u8(x >> 8);
+
+		if (digits == 3) {
+			const u32 d2 = u8(x >> 16);
+			return std::min(d0 * 100 + d1 * 10 + d2, 512u);
+		}
+
+		if (digits == 2)
+			return d0 * 10 + d1;
+
+		return d0;
+	}
+
 	template<size_t SHIFT = 0>
 	__forceinline std::tuple<u32, u32> likely_1(const u32 x) {
 
@@ -868,10 +892,12 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 					const auto c3 = (u32)_tzcnt_u32(v);
 
-					object_ptr->x = parse_integer_m3::fixed_likely_3(load_u32(p), (c0));
-					object_ptr->y = parse_integer_m3::fixed_likely_3(load_u32(p + c0 + 1), (c1 - c0) - 1);
+					object_ptr->x = parse_integer_m3::NEG_fixed_likely_3(load_u32(p), (c0));
+					object_ptr->y = parse_integer_m3::NEG_fixed_likely_3(load_u32(p + c0 + 1), (c1 - c0) - 1);
 					object_ptr->time = parse_integer_m3::fixed_likely_3(load_u32(p + c1 + 1), (c2 - c1) - 1);
 					object_ptr->type = parse_integer_m3::fixed_likely_1(load_u32(p + c2 + 1), (c3 - c2) - 1);
+
+
 
 					*slider_defer_table = { (const char*)p + c3 + 1, object_data_ptr };
 					slider_defer_table += (object_ptr->type >> 1) & 1;
