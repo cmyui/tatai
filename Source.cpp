@@ -62,6 +62,21 @@ typedef uint64_t u64;
 
 typedef int64_t i64;
 
+struct _Branch_Print {
+
+	u32 total, count;
+
+	void add(bool v) {
+
+		++total;
+		count += v;
+
+		printf("%f\n", double(count) / double(total));
+
+	}
+
+};
+
 constexpr u32 pext_constexpr(u32 v, u32 m) noexcept {
 
 	u32 r{}, o{ 1 };
@@ -983,41 +998,48 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 			parse_finished:
 
-				// error table
+				// error table for x/y should be read here at some point
 
-				{ // calc slider paths
-					for (auto* d = MEM->get_slider_defer(); d != slider_defer_table; ++d) {
+				if(auto* d = MEM->get_slider_defer(); d != slider_defer_table) [[likely]] {
+
+					for (; d != slider_defer_table; ++d) {
 
 						d->p = parse_slider_path(d->p, slider_ptr, d->out);
-
 						slider_ptr = d->out->point_end;
 
 					}
-				}
 
-				{ // calc slider length
+					d = MEM->get_slider_defer();
 
-					//double last{ 0. }; u64 check{};
+					// if there are no slider fall backs, all p are safe to deref
+					if (MEM->ELEM_COUNT[MEM_slider_fallback] == 0) [[likely]] {
 
-					for (const auto* d = MEM->get_slider_defer(); d != slider_defer_table; ++d) {
+						for (; d < slider_defer_table - 1; d += 2) {
 
-						if (d->p == nullptr) [[unlikely]]
-							continue;
+							parse_double::from_ascii::parse_decimal_16_pair(
+								d->p,
+								(d + 1)->p,
+								d->out->length,
+								(d + 1)->out->length
+							);
 
-						d->out->length = parse_double::from_ascii::parse_decimal_16(d->p);
-						 
-						//const auto v = load_u64(d->p);
-						//
-						//if (v == check) {
-						//	d->out->length = last;
-						//	continue;
-						//}
-						//check = v;
-						//
-						//last = parse_double::from_ascii::parse_decimal_16(d->p);
-						//d->out->length = last;
-						//printf("%f\n", d->out->length);
+						}
+
+						if (d == slider_defer_table - 1)
+							d->out->length = parse_double::from_ascii::NO_INLINE_parse_decimal_16(d->p);
+
+					} else {
+
+						for (; d != slider_defer_table; ++d) {
+
+							// MSVC currently generates worse register use with this forced to no inline.
+							if (d->p != nullptr) [[likely]]
+								d->out->length = parse_double::from_ascii::parse_decimal_16(d->p);
+
+						}
+
 					}
+
 				}
 
 				{ // fall back general cases
@@ -1067,9 +1089,106 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 #include <filesystem>
 #include <iostream>
 
-void run_test_folder() {
+#ifdef _DO_VTUNE
+#include "C:\Program Files (x86)\Intel\oneAPI\vtune\latest\include\ittnotify.h"
+#pragma comment(lib, "C:\\Program Files (x86)\\Intel\\oneAPI\\vtune\\latest\\lib64\\libittnotify.lib")
+#else
+#define __itt_pause()
+#define __itt_resume()
+#endif
+u32 run_test_prebatch() {
 
-	//return;
+	__itt_pause();
+
+	_memory_region_new* MR{ create_memory_region() };
+
+	std::vector<std::vector<u8>> FILES{}; FILES.reserve(99000);
+
+	printf("starting preload\n");
+
+	for (const auto& file_entry : std::filesystem::directory_iterator("C:/Users/Akita/Source/Repos/fast_beatmap_load/map/maps")) {
+
+		const auto _p{ file_entry.path().native() };
+
+		const auto file_name{ std::string(_p.begin(), _p.end()) };
+
+		if (file_name.find(".osu") == std::string::npos)
+			continue;
+
+		auto& v = FILES.emplace_back(read_file(file_name.c_str()));
+
+		v.push_back('\n');
+		v.resize(v.size() + 128);
+
+		if ((FILES.size() & ((1 << 10) - 1)) == 0) printf("%i\n", FILES.size());
+
+	}
+
+	printf("starting pre-parse\n");
+
+
+	SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
+
+	u64 bytes{}, objects{}, sliders{}, points{}, timing{};
+	for (const auto& map : FILES) {
+		parse_beatmap_from_memory(&MR->header, (char*)map.data(), (char*)map.data() + map.size() - 129);
+		const auto& H = MR->header;
+		const u32 n = H.ELEM_COUNT[MEM_object_header];
+		bytes += map.size() - 129; objects += n; timing += H.ELEM_COUNT[MEM_timing_point];
+		for (u32 i{}; i < n; ++i)
+			if (H.get_object_header()[i].type & 2) {
+				++sliders;
+				const auto& b = H.get_object_body()[i];
+				if (b.point_start) points += b.point_end - b.point_start;
+			}
+	}
+
+	printf("maps=%zu bytes=%llu objects=%llu sliders=%llu points=%llu timing=%llu reps=%d\n", FILES.size(), bytes, objects, sliders, points, timing, 50);
+
+	__itt_resume();
+
+	u32 COUNT{};
+
+	std::vector<u32> MIN_TIME; MIN_TIME.resize(FILES.size());
+
+	for (size_t CRANK{}; CRANK < 50; ++CRANK)
+		for (size_t i{}; i < FILES.size(); ++i) {
+
+			const auto& map = FILES[i];
+
+			{
+
+				std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+
+				parse_beatmap_from_memory(&MR->header, (char*)map.data(), (char*)map.data() + map.size() - 129);
+
+				const auto delta = std::chrono::steady_clock::now() - start_time;
+
+				const u32 delta_u32{ (u32)std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count()};
+
+				MIN_TIME[i] = MIN_TIME[i] ? std::min(MIN_TIME[i], delta_u32) : delta_u32;
+				COUNT += MR->header.ELEM_COUNT[0];
+
+			}
+		}
+
+	u64 TOTAL_NANO{};
+
+	std::sort(MIN_TIME.begin(), MIN_TIME.end());
+
+	for (const auto& value : MIN_TIME)
+		TOTAL_NANO += value;
+
+	printf("TOTAL: %f\nMEDIAN: %f\nAVERAGE:%f\n",
+		double(TOTAL_NANO) / 1000.,
+		double(MIN_TIME[MIN_TIME.size() >> 1]) / 1000.,
+		double(TOTAL_NANO) / double(MIN_TIME.size()) / 1000.
+		);
+
+	return COUNT;
+}
+
+void run_test_folder() {
 	
 	_memory_region_new* MR{ create_memory_region() };
 
@@ -1083,7 +1202,8 @@ void run_test_folder() {
 		std::vector<u8> FILE_BUFFER{};
 
 		//_Timer A{};
-		for (const auto& file_entry : std::filesystem::directory_iterator("../fast_beatmap_load/map/maps")) {
+		//for (const auto& file_entry : std::filesystem::directory_iterator("../fast_beatmap_load/map/maps")) {
+		for (const auto& file_entry : std::filesystem::directory_iterator("C:/Users/Akita/Source/Repos/fast_beatmap_load/map/maps")) {
 
 			const auto _p{ file_entry.path().native() };
 
@@ -1092,13 +1212,11 @@ void run_test_folder() {
 			if (file_name.find(".osu") == std::string::npos)
 				continue;
 
-			//printf("%s\n", file_name.c_str());
-
+			//printf("%s\n", file_name.c_str());			
 			read_file2(file_name.c_str(), FILE_BUFFER);
 
 			FILE_BUFFER.push_back('\n');
 			FILE_BUFFER.resize(FILE_BUFFER.size() + 128);
-
 
 			++COUNT;
 
@@ -1110,9 +1228,7 @@ void run_test_folder() {
 
 			std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
-			//for (size_t CRANK{}; CRANK < 1000; ++CRANK)
 			parse_beatmap_from_memory(&MR->header, (char*)FILE_BUFFER.data(), (char*)FILE_BUFFER.data() + FILE_BUFFER.size() - 128);
-
 			//MR.print_map_data();
 
 			total_elapsed_time += std::chrono::steady_clock::now() - start_time;
@@ -1146,8 +1262,14 @@ void run_test_folder() {
 
 int main() {
 
-	run_test_folder();
-	return 0;
+	//run_test_prebatch();
+	//
+	//return 0;
+
+	SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
+	//
+	//run_test_folder();
+	//return 0;
 
 	auto data = read_file("within_objects.txt");
 	//auto data = read_file("test.osu");

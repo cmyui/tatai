@@ -224,58 +224,138 @@ namespace parse_double{
 
 		alignas(64) inline constexpr auto DECIMAL_SHUF_UNIFIED = []() {
 
-			std::array<std::array<u8, 16>, 17 * 17> table{};
+			std::array<std::array<u8, 16>, 273> table{};
 
 			for (auto& e : table)
 				for (auto& x : e)
 					x = 0x80u;
 
-			for (size_t end{ 1 }; end < 17; ++end) {
+			for (u32 end{ 1 }; end <= 16; ++end) {
 
-				for (size_t dot{}; dot <= end; ++dot) {
+				for (u32 dot{}; dot <= end; ++dot) {
 
-					auto& s{ table[end * 17 + dot] };
+					const u32 index = (end << 4) + dot;
 
-					size_t out = 16 - (end - (dot < end));
+					auto& s = table[index];
+
+					u32 out = 16 - (end - u32(dot < end));
 
 					for (u32 in{}; in < end; ++in) {
 						if (in != dot)
-							s[out++] = u8(in);
+							s[out++] = (u8)in;
 					}
 				}
 			}
 
 			return table;
-		}();
+			}();
 
 		alignas(64) inline constexpr std::array<double, 17> POW10 = {
 			1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16
 		};
 
-		// Decodes a non-negative decimal from its first 16 chars (later digits are dropped) without
-		// branching on its shape. With a '.' at most 15 digits fit, so sig < 2^53 and both double(sig)
-		// and 10^frac are exact - the division is then the correctly rounded value.
+		alignas(64) inline constexpr std::array<double, 17> R_POW10 = []{
+
+			auto cpy = POW10;
+
+			for (auto& v : cpy)
+				v = 1. / v;
+			return cpy;
+
+		}();
+
 		__forceinline double parse_decimal_16(const char* p) noexcept {
 
 			const auto raw = _mm_loadu_si128((__m128i const*)p);
 
 			const auto numeric = _mm_sub_epi8(raw, _mm_set1_epi8('0'));
+			const auto dot_cmp = _mm_cmpeq_epi8(raw, _mm_set1_epi8('.'));
 
 			const auto special = (u32)_mm_movemask_epi8(numeric);
-			const auto dots = (u32)_mm_movemask_epi8(_mm_cmpeq_epi8(raw, _mm_set1_epi8('.')));
+			const auto dots = (u32)_mm_movemask_epi8(dot_cmp);
 
 			const u32 end = _tzcnt_u32((special & ~dots) | 0x10000u);
 			const u32 dot = _tzcnt_u32(dots | (1u << end));
 
 			const u32 frac = (end - dot) - u32(dot < end);
+			
+			const auto shuff = _mm_shuffle_epi8(numeric,
+				_mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[(end << 4) + dot].data()))
+			);
 
-			const auto shuff = _mm_shuffle_epi8(numeric, _mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[end * 17u + dot].data())));
-
-			return double((i64)compute_decimal16(shuff)) / POW10[frac];
+			return double((i64)compute_decimal16(shuff)) * R_POW10[frac];
 		}
 
 		__declspec(noinline) double NO_INLINE_parse_decimal_16(const char* p) noexcept {
 			return parse_decimal_16(p);
+		}
+
+
+		__forceinline void parse_decimal_16_pair(const char* p0, const char* p1, double& out0, double& out1) noexcept {
+
+			const auto raw0 = _mm_loadu_si128((__m128i const*)p0);
+			const auto raw1 = _mm_loadu_si128((__m128i const*)p1);
+
+			const auto digit0 = _mm_sub_epi8(raw0, _mm_set1_epi8('0'));
+			const auto digit1 = _mm_sub_epi8(raw1, _mm_set1_epi8('0'));
+
+			const auto dot_cmp0 = _mm_cmpeq_epi8(raw0, _mm_set1_epi8('.'));
+			const auto dot_cmp1 = _mm_cmpeq_epi8(raw1, _mm_set1_epi8('.'));
+
+			const auto special0 = (u32)_mm_movemask_epi8(digit0);
+			const auto special1 = (u32)_mm_movemask_epi8(digit1);
+
+			const auto dots0 = (u32)_mm_movemask_epi8(dot_cmp0);
+			const auto dots1 = (u32)_mm_movemask_epi8(dot_cmp1);
+
+			const u32 end0 = _tzcnt_u32((special0 & ~dots0) | 0x10000u);
+			const u32 dot0 = _tzcnt_u32(dots0 | (1u << end0));
+			const u32 frac0 = (end0 - dot0) - u32(dot0 < end0);
+
+			//const auto exp_base0 = R_POW10[frac0];
+
+			const auto shuff0 = _mm_shuffle_epi8(digit0,
+				_mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[(end0 << 4) + dot0].data()))
+			);
+
+			const u32 end1 = _tzcnt_u32((special1 & ~dots1) | 0x10000u);
+			const u32 dot1 = _tzcnt_u32(dots1 | (1u << end1));
+			const u32 frac1 = (end1 - dot1) - u32(dot1 < end1);
+
+			//const auto exp_base1 = R_POW10[frac1];
+
+			const auto shuff1 = _mm_shuffle_epi8(digit1,
+				_mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[(end1 << 4) + dot1].data()))
+			);
+
+			const auto inter0_0 = _mm_maddubs_epi16(shuff0, _mm_setr_epi8(10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1));
+			const auto inter0_1 = _mm_maddubs_epi16(shuff1, _mm_setr_epi8(10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1, 10, 1));
+
+			const auto inter1_0 = _mm_madd_epi16(inter0_0, _mm_setr_epi16(100, 1, 100, 1, 100, 1, 100, 1));
+			const auto inter1_1 = _mm_madd_epi16(inter0_1, _mm_setr_epi16(100, 1, 100, 1, 100, 1, 100, 1));
+
+			const auto packed0 = _mm_packs_epi32(inter1_0, inter1_0);
+			const auto packed1 = _mm_packs_epi32(inter1_1, inter1_1);
+
+			const auto halves0 = _mm_madd_epi16(packed0, _mm_setr_epi16(10000, 1, 10000, 1, 10000, 1, 10000, 1));
+			const auto halves1 = _mm_madd_epi16(packed1, _mm_setr_epi16(10000, 1, 10000, 1, 10000, 1, 10000, 1));
+
+			const u64 res0 = (u64)_mm_cvtsi128_si64(halves0);
+			const u64 res1 = (u64)_mm_cvtsi128_si64(halves1);
+
+			const auto ret0 = i64(u64(u32(res0)) * 100000000ull + (res0 >> 32));
+			__assume(ret0 >= 0);
+
+			//out0 = exp_base0 * double(ret0);
+			out0 = R_POW10[frac0] * double(ret0);
+
+			const auto ret1 = i64(u64(u32(res1)) * 100000000ull + (res1 >> 32));
+			__assume(ret1 >= 0);
+
+			//out1 = exp_base1 * double(ret1);
+			out1 = R_POW10[frac1] * double(ret1);
+
+			return;
 		}
 
 		inline u64 load_ascii_decimal_16(const char* p) noexcept {

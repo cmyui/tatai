@@ -115,7 +115,6 @@ namespace parse_5_time {
 
 		auto result = _mm_madd_epi16(inter2, _mm_setr_epi16(1, 0, 1, 0, 10, 1, 1, 0));
 
-
 		result = _mm_min_epu32(result, _mm_setr_epi32(512, 512, -1, -1));
 
 		_mm_store_si128((__m128i*)(out_object), result);

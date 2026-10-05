@@ -91,7 +91,7 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, _slider_poin
 	const u32 first = _blsr_u32(first4);
 	const u32 second = _blsi_u32(first); // i really dont like this
 
-	if (second & commas) [[unlikely]] { // POP 2
+	if (second & commas) { // POP 2
 
 		const u32 key_in{ (_blsi_u32(first4) | second) };
 
@@ -141,7 +141,6 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, _slider_poin
 
 __forceinline const char *parse_slider_path(const char *__restrict p, _slider_point*__restrict slider_ptr, _slider_data *const __restrict r) {
 
-
 	{ // hitsound
 
 		const auto v = parse_integer_m2::likely_1(load_u32(p));
@@ -150,7 +149,8 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 		// p += 4;
 	}
 
-	r->curve_type = *p;
+	const auto curve_type = (u8)*p;
+	r->curve_type = curve_type;
 
 	p += 2;
 
@@ -158,6 +158,21 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 
 	r->point_start = slider_ptr;
 
+	// P or L slider
+	//if ((curve_type & 2) == 0) {
+	//
+	//	const auto result = parse_two_slider_points(p, slider_ptr);
+	//
+	//	if (result == 0) [[unlikely]] { // ditch all our work and come back later		
+	//		push_error_slider_body_list(r);
+	//		return nullptr;
+	//	}
+	//
+	//	slider_ptr += u8(result);
+	//	p += (result >> 24);
+	//
+	//}
+	//else
 	for (;;) {
 
 		const auto result = parse_two_slider_points(p, slider_ptr);
@@ -166,7 +181,6 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 			push_error_slider_body_list(r);
 			return nullptr;
 		}
-
 
 		slider_ptr += u8(result);
 		p += (result >> 24);
@@ -206,12 +220,7 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 
 	}
 
-  return p;
-}
+	//r->length = parse_double::from_ascii::parse_decimal_16(p);
 
-__forceinline void parse_slider_length(const char *__restrict p, _slider_data *const __restrict r) {
-
-	r->length = parse_double::from_ascii::parse_decimal_16(p);
-
-	return;
+	return p;
 }

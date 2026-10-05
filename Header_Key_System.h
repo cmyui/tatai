@@ -11,7 +11,7 @@ enum header_id : u8 {
 
 namespace header_key {
 
-	const char** parse_headers_key_index(_memory_region_header* __restrict MEM,
+	__forceinline const char** parse_headers_key_index(_memory_region_header* __restrict MEM,
 		const char** __restrict start, const char** const __restrict end) {
 
 		{
