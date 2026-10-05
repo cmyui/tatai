@@ -121,7 +121,7 @@ namespace parse_4_time {
 
 		if ((has_negative & ~v) != 0) [[unlikely]] {
 
-			// a is character below '0' - while not being a comma
+			// there is a character below '0' - while not being a comma
 			// relevent cases are '-' and '.' (in the future)
 
 			const auto y_start = (u32)_tzcnt_u32(xy_pair);

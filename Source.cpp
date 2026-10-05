@@ -434,11 +434,18 @@ struct _memory_region_header {
 
 	u32 version_number;
 
-	std::string_view osu_header_table[32];
-
 	u32 compile_flags;
 
+	struct {
+
+		double table[8];
+		//double StackLeniency;
+		u32 Mode;
+
+	} osu_headers;
+
 	u8 lines_skipped;
+
 
 	void remove_invalid_lines() {
 
@@ -900,7 +907,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 
 					*slider_defer_table = { (const char*)p + c3 + 1, object_data_ptr };
-					slider_defer_table += (object_ptr->type >> 1) & 1;
+					slider_defer_table = (_slider_deferral*)((u8*)slider_defer_table + ((object_ptr->type & 2u) << 3));
 
 				}
 
@@ -1139,8 +1146,8 @@ void run_test_folder() {
 
 int main() {
 
-	//run_test_folder();
-	//return 0;
+	run_test_folder();
+	return 0;
 
 	auto data = read_file("within_objects.txt");
 	//auto data = read_file("test.osu");
