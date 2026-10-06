@@ -16,7 +16,7 @@ __forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shu
 
 }
 
-u32 parse_two_slider_points(const char* __restrict p, _slider_point* const __restrict out) {
+__forceinline u32 parse_two_slider_points(const char* __restrict p, _slider_point* const __restrict out) {
 
     // for objects outside the digit range of 1-3
     //      example: 0:1234
