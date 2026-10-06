@@ -192,31 +192,32 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 
 	r->point_end = slider_ptr;
 
-	r->slides = (p[0] & 0x0f);
-
 	if (p[1] == ',') { // X,
+
+		r->slides = (p[0] & 0x0f);
 
 		p += 2;
 
 	} else {
 
-		++p;
+		u32 slides = (p[0] & 0x0f) * 10 + (p[1] & 0x0f);
 
-		u64 v = load_u64(p);
+		u32 v = load_u32(p += 2);
 
-		while (v && u8(v) != ',') {
-			r->slides *= 10;
-			r->slides += (p[0] & 0x0f);
+		while (v && u8(v) != u8(',')) {
+			slides = slides * 10 + (v & 0x0f);
 			v >>= 8;
 			++p;
 		}
+
+		r->slides = slides;
 
 		if (v == 0) [[unlikely]] {
 			push_error_slider_body_list(r);
 			return nullptr;
 		}
 
-	++p;
+		++p;
 
 	}
 

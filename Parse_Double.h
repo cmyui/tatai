@@ -290,7 +290,6 @@ namespace parse_double{
 			return parse_decimal_16(p);
 		}
 
-
 		__forceinline void parse_decimal_16_pair(const char* p0, const char* p1, double& out0, double& out1) noexcept {
 
 			const auto raw0 = _mm_loadu_si128((__m128i const*)p0);
@@ -312,18 +311,13 @@ namespace parse_double{
 			const u32 dot0 = _tzcnt_u32(dots0 | (1u << end0));
 			const u32 frac0 = (end0 - dot0) - u32(dot0 < end0);
 
-			//const auto exp_base0 = R_POW10[frac0];
-
-			const auto shuff0 = _mm_shuffle_epi8(digit0,
-				_mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[(end0 << 4) + dot0].data()))
-			);
-
 			const u32 end1 = _tzcnt_u32((special1 & ~dots1) | 0x10000u);
 			const u32 dot1 = _tzcnt_u32(dots1 | (1u << end1));
 			const u32 frac1 = (end1 - dot1) - u32(dot1 < end1);
 
-			//const auto exp_base1 = R_POW10[frac1];
-
+			const auto shuff0 = _mm_shuffle_epi8(digit0,
+				_mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[(end0 << 4) + dot0].data()))
+			);
 			const auto shuff1 = _mm_shuffle_epi8(digit1,
 				_mm_load_si128((__m128i const*)(DECIMAL_SHUF_UNIFIED[(end1 << 4) + dot1].data()))
 			);
