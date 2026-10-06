@@ -72,8 +72,7 @@ namespace slider_body_positive {
 
 				const u32 slot = make_slot(effective_bits);
 
-				if (used[slot])
-					return { 0ull / 0 };
+				//if (used[slot]) return { 0ull / 0 };
 
 				used[slot] = true;
 
@@ -112,8 +111,7 @@ namespace slider_body_positive {
 
 						const u32 slot = make_slot(effective_bits);
 
-						if (used[slot])
-							return {1ull/0};
+						//if (used[slot]) return {1ull/0};
 
 						used[slot] = true;
 

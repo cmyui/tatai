@@ -2,7 +2,6 @@
 
 #include "Slider_Body_Neg.h"
 #include "Slider_Body_Pop2.h"
-//#include "Slider_Body_Pop4.h"
 #include "Slider_Body_Pos.h"
 
 __forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shuffle, _slider_point *const out) noexcept {
@@ -17,7 +16,7 @@ __forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shu
 
 }
 
-__forceinline u32 parse_two_slider_points(const char* __restrict p, _slider_point* const __restrict out) {
+u32 parse_two_slider_points(const char* __restrict p, _slider_point* const __restrict out) {
 
     // for objects outside the digit range of 1-3
     //      example: 0:1234
@@ -77,18 +76,23 @@ __forceinline u32 parse_two_slider_points(const char* __restrict p, _slider_poin
 
     const u32 effective_bits = first4 & _blsmsk_u32(commas); // is 26% 0x0088 and 38% 0x8888    
 
+
     const u32 key = ((effective_bits * 480925u) >> 10u) & 0x1fe0u;
 
     const auto* entry = (const u8*)slider_body_positive::TABLE.data() + key;
 
     const u64 entry_data = load_u64(entry);
 
-    if (u32(entry_data) != effective_bits) [[unlikely]]
-        return 0;
+	const u32 comma_flags = (commas & effective_bits);
 
-	parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i*)(entry + 16)), out);
+	if (u32(entry_data) == effective_bits) [[likely]] {
 
-	return u32(entry_data >> 32) | ((effective_bits & commas) << 8);
+		parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i*)(entry + 16)), out);
+
+		return u32(entry_data >> 32) | (comma_flags << 8);
+	}
+
+	return 0;
 
 }
 

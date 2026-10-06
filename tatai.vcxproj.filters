@@ -42,9 +42,6 @@
     <ClInclude Include="Slider_Body_Pop2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Slider_Body_Pop4.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="state_test.h">
       <Filter>Header Files</Filter>
     </ClInclude>

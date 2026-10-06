@@ -227,7 +227,6 @@
     <ClInclude Include="Parse_Spinner.h" />
     <ClInclude Include="Slider_Body_Neg.h" />
     <ClInclude Include="Slider_Body_Pop2.h" />
-    <ClInclude Include="Slider_Body_Pop4.h" />
     <ClInclude Include="Slider_Body_Pos.h" />
     <ClInclude Include="state_test.h" />
   </ItemGroup>
