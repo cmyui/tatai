@@ -672,7 +672,7 @@ __declspec(noinline) u64 PAIR_parse_object_loop(
 			break;
 
 		*defer = { p + con0, object_data };
-		defer += (object->type >> 1) & 1;
+		defer = (_slider_deferral*)((u8*)defer + ((object->type & 2u) << 3));
 
 		auto con1 = t >> 8;
 
@@ -684,7 +684,7 @@ __declspec(noinline) u64 PAIR_parse_object_loop(
 		}
 
 		*defer = { p1 + con1, object_data + 1 };
-		defer += ((object + 1)->type >> 1) & 1;
+		defer = (_slider_deferral*)((u8*)defer + (((object+1)->type & 2u) << 3));
 
 		pos += 2;
 		object += 2;
@@ -795,7 +795,6 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 			auto mask = u64(m0) | (u64(m1) << 32);
 
-
 			const auto count = (u32)_mm_popcnt_u64(mask);
 
 			line_ptr[0] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
@@ -828,16 +827,18 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 		}
 
+		_mm256_zeroupper();
+
 		#undef DO		
 
 		line_ptr_end = line_ptr;
+
 
 		*line_ptr++ = nullptr;
 		*line_ptr = nullptr;
 
 		line_ptr = MEM->get_lines();
-
-		_mm256_zeroupper();
+		MEM->ELEM_COUNT[MEM_lines] = line_ptr_end - line_ptr;
 
 	}
 
@@ -918,8 +919,6 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 					object_ptr->y = parse_integer_m3::NEG_fixed_likely_3(load_u32(p + c0 + 1), (c1 - c0) - 1);
 					object_ptr->time = parse_integer_m3::fixed_likely_3(load_u32(p + c1 + 1), (c2 - c1) - 1);
 					object_ptr->type = parse_integer_m3::fixed_likely_1(load_u32(p + c2 + 1), (c3 - c2) - 1);
-
-
 
 					*slider_defer_table = { (const char*)p + c3 + 1, object_data_ptr };
 					slider_defer_table = (_slider_deferral*)((u8*)slider_defer_table + ((object_ptr->type & 2u) << 3));
@@ -1065,7 +1064,6 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 						slider_ptr = ((_slider_data*)error_header->object)->point_end;
 
-
 					}
 
 				}
@@ -1081,7 +1079,6 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 	if (MEM->lines_skipped) [[unlikely]] {
 		MEM->remove_invalid_lines();
 	}
-
 
 	return;
 }
@@ -1145,32 +1142,43 @@ u32 run_test_prebatch() {
 
 	printf("maps=%zu bytes=%llu objects=%llu sliders=%llu points=%llu timing=%llu reps=%d\n", FILES.size(), bytes, objects, sliders, points, timing, 50);
 
-	__itt_resume();
 
 	u32 COUNT{};
 
-	std::vector<u32> MIN_TIME; MIN_TIME.resize(FILES.size());
+	std::vector<double> MIN_TIME; MIN_TIME.resize(FILES.size());
 
-	for (size_t CRANK{}; CRANK < 50; ++CRANK)
-		for (size_t i{}; i < FILES.size(); ++i) {
+	__itt_resume();
+
+	constexpr u32 REPEATS = 3;
+
+	for (size_t CRANK = 0; CRANK < 50; ++CRANK) {
+		for (size_t i = 0; i < FILES.size(); ++i) {
 
 			const auto& map = FILES[i];
 
-			{
+			const auto start_time = std::chrono::steady_clock::now();
 
-				std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-
-				parse_beatmap_from_memory(&MR->header, (char*)map.data(), (char*)map.data() + map.size() - 129);
-
-				const auto delta = std::chrono::steady_clock::now() - start_time;
-
-				const u32 delta_u32{ (u32)std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count()};
-
-				MIN_TIME[i] = MIN_TIME[i] ? std::min(MIN_TIME[i], delta_u32) : delta_u32;
-				COUNT += MR->header.ELEM_COUNT[0];
-
+			for (u32 r = 0; r < REPEATS; ++r) {
+				parse_beatmap_from_memory(
+					&MR->header,
+					(char*)map.data(),
+					(char*)map.data() + map.size() - 129
+				);
 			}
+
+			const auto delta = std::chrono::steady_clock::now() - start_time;
+
+			const double ns =
+				double(std::chrono::duration_cast<std::chrono::nanoseconds>(delta).count())
+				/ double(REPEATS);
+
+			MIN_TIME[i] = MIN_TIME[i] != 0.0
+				? std::min(MIN_TIME[i], ns)
+				: ns;
+
+			COUNT += MR->header.ELEM_COUNT[0];
 		}
+	}
 
 	u64 TOTAL_NANO{};
 
@@ -1179,10 +1187,10 @@ u32 run_test_prebatch() {
 	for (const auto& value : MIN_TIME)
 		TOTAL_NANO += value;
 
-	printf("TOTAL: %f\nMEDIAN: %f\nAVERAGE:%f\n",
+	printf("TOTAL: %f\nMEDIAN: %fns\nAVERAGE:%f\n",
 		double(TOTAL_NANO) / 1000.,
-		double(MIN_TIME[MIN_TIME.size() >> 1]) / 1000.,
-		double(TOTAL_NANO) / double(MIN_TIME.size()) / 1000.
+		double(MIN_TIME[MIN_TIME.size() >> 1]),
+		double(TOTAL_NANO) / double(MIN_TIME.size())
 		);
 
 	return COUNT;
@@ -1254,6 +1262,7 @@ void run_test_folder() {
 		printf("TOTAL_TIME: %f| average_per_map:%f\n", micro_seconds, micro_seconds / double(COUNT));
 
 	}
+
 	printf("%i\n", XOR_TOTAL);
 
 }

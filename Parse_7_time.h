@@ -87,25 +87,12 @@ namespace parse_7_time {
 		auto result = _mm_madd_epi16(pairs, _mm_setr_epi16(10, 1,10, 1,10, 1, 25000, 250));
 
 		result = _mm_min_epu32(result, _mm_setr_epi32(512, 512, -1, -1));
+		
+		const u64 t = (u64)_mm_extract_epi64(result, 1);
 
-		if constexpr (is_clang) {
-
-			const auto time_fix = _mm_srli_epi64(result, 30);
-			const auto time = _mm_add_epi32(result, time_fix);
-			const auto result_time = _mm_blend_epi16(result, time, 0x30);
-
-			_mm_store_si128((__m128i*)out_object, result_time);
-
-		} else {
+		*(u64*)out_object = (u64)_mm_extract_epi64(result, 0);
 		
-			const u64 t = (u64)_mm_extract_epi64(result, 1);
-		
-			*(u64*)out_object = (u64)_mm_extract_epi64(result, 0);
-		
-			out_object->time = u32(t) + u32(t >> 30);
-		
-		}
-		
+		out_object->time = u32(t) + u32(t >> 30);
 
 		if ((has_negative & ~v) != 0) [[unlikely]] {
 

@@ -60,6 +60,9 @@
     <ClInclude Include="Header_Key_System.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Slider_Body_Pos.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source.cpp">

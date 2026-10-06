@@ -2,7 +2,8 @@
 
 #include "Slider_Body_Neg.h"
 #include "Slider_Body_Pop2.h"
-#include "Slider_Body_Pop4.h"
+//#include "Slider_Body_Pop4.h"
+#include "Slider_Body_Pos.h"
 
 __forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shuffle, _slider_point *const out) noexcept {
 
@@ -16,13 +17,13 @@ __forceinline void parse_slider_pair_GENERAL(const __m128i m0, const __m128i shu
 
 }
 
-__forceinline u32 parse_two_slider_points(const char *__restrict p, _slider_point *const __restrict out) {
+__forceinline u32 parse_two_slider_points(const char* __restrict p, _slider_point* const __restrict out) {
 
-	// for objects outside the digit range of 1-3
-	//      example: 0:1234
-	// returning 0 puts this slider into a deferred list to be recomputed using a general parser
+    // for objects outside the digit range of 1-3
+    //      example: 0:1234
+    // returning 0 puts this slider into a deferred list to be recomputed using a general parser
 
-	const auto m0 = _mm_loadu_si128((const __m128i *)p);
+	const auto m0 = _mm_loadu_si128((const __m128i*)p);
 
 	const auto X = (u32)_mm_movemask_epi8(
 		_mm_shuffle_epi8(_mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -31,109 +32,63 @@ __forceinline u32 parse_two_slider_points(const char *__restrict p, _slider_poin
 			(char)-1, // |,
 			(char)-1, // -
 			0, 0),
-		m0));
+			m0));
 
 	const auto comma_xmm = _mm_cmpeq_epi8(m0, _mm_set1_epi8(','));
+    const auto digits = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
 
 	const auto first4 = (u32)_pdep_u32(0b1111u, X);
 
-	if (const u32 negative = first4 & ((first4 << 1u) + 1u); negative) [[unlikely]] {
+    const auto commas = (u32)_mm_movemask_epi8(comma_xmm);
 
-		//static u32 BRANCH_COUNT{}; printf("NEGATIVE: %i\n", ++BRANCH_COUNT);
+	if (const u32 negative = first4 & ((first4 << 1u) | 1u); negative) [[unlikely]] {
 
-		const u32 sep = X & ~negative;
+        const u32 sep = X & ~negative;
 
-		const auto first2 = (u32)_pdep_u32(0b11, sep);
-		
-		const auto end = (u32)_blsi_u32(_blsr_u32(first2));
+        const auto first2 = (u32)_pdep_u32(0b11, sep);
 
-		const u32 point_negative = negative & (end - 1u);
+        const auto end = (u32)_blsi_u32(_blsr_u32(first2));
 
-		const auto comma_mask{ (u32)_mm_movemask_epi8(comma_xmm) };
+        const u32 point_negative = negative & (end - 1u);
 
-		if (point_negative)
-			return slider_body_neg::parse_slider_point_negative(p, out,
-				first2 | (point_negative << 16u), comma_mask);
+        if (point_negative)
+            return slider_body_neg::parse_slider_point_negative(p, out,
+                first2 | (point_negative << 16u), commas);
+        
+        const u32 key = (first2 * 3u) & 0x6Cu;
 
-		{
+        {
+            const auto* tbl_vali = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.validation.data());
 
-			//const auto clean_first4 = (u32)_pdep_u32(0b1111u, sep);
+            if (*(tbl_vali + key) != first2) [[unlikely]] {
+                return 0;
+            }
+        }
 
-			const auto digits = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
+        const auto* tbl = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.table.data());
 
-			const u32 key = (first2 * 3u) & 0x6Cu;
+        parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i*)(tbl + key)), out);
 
-			{
-				const auto* tbl_vali = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.validation.data());
+        unsigned long consumed;
+        _BitScanReverse(&consumed, first2);
 
-				if (*(tbl_vali + key) != first2) [[unlikely]] {
-					return 0;
-				}
-			}
-
-			const auto *tbl = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.table.data());
-
-			parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i *)(tbl + key)), out);
-
-			unsigned long consumed;
-			_BitScanReverse(&consumed, first2);
-
-			return (1u | (1 << 24) | ((end & comma_mask) << 8u)) + (consumed << 24u);
-		}
-
+        return (1u | (1 << 24) | ((end & commas) << 8u)) + (consumed << 24u);
 	}
 
-	//static u32 BRANCH_COUNT{}; printf("NORMAL: %i\n", ++BRANCH_COUNT);
+    const u32 effective_bits = first4 & _blsmsk_u32(commas); // is 26% 0x0088 and 38% 0x8888    
 
-	const auto commas = (u32)_mm_movemask_epi8(comma_xmm);
-	const auto digits = _mm_sub_epi8(m0, _mm_set1_epi8('0'));
+    const u32 key = ((effective_bits * 480925u) >> 10u) & 0x1fe0u;
 
-	const u32 first = _blsr_u32(first4);
-	const u32 second = _blsi_u32(first); // i really dont like this
+    const auto* entry = (const u8*)slider_body_positive::TABLE.data() + key;
 
-	if (second & commas) { // POP 2
+    const u64 entry_data = load_u64(entry);
 
-		const u32 key_in{ (_blsi_u32(first4) | second) };
+    if (u32(entry_data) != effective_bits) [[unlikely]]
+        return 0;
 
-		const u32 key = (key_in * 3u) & 0x6Cu;
+	parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i*)(entry + 16)), out);
 
-		{
-			const auto* tbl_vali = (const u32*)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.validation.data());
-
-			if (*(tbl_vali + key) != key_in) [[unlikely]] {
-				return 0;
-			}
-		}
-
-		const auto *tbl = (const u32 *)(slider_body_pop2::POINT_SINGLE_SHUF_DELIM2.table.data());
-
-		parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i *)(tbl + key)), out);
-
-		return (1u | 0x00ffff00u | (1u << 24u)) + (_tzcnt_u32(second) << 24u);
-	}
-
-	{ // POP 4
-
-		const u32 key = ((first4 * 27151u) >> 5u) & 0xff0u;
-
-		{
-
-			const auto validation_flag = *(const u32*)((const u8*)slider_body_pop4::POINT_PAIR_SHUF_DELIM4.validation.data() + key);
-
-			if (validation_flag != first4) [[unlikely]] {
-				return 0;
-			}
-
-		}
-
-		parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i *)((const u8 *)
-					slider_body_pop4::POINT_PAIR_SHUF_DELIM4.table.data() + key)), out);		
-
-		unsigned long consumed;
-		_BitScanReverse(&consumed, first4);
-
-		return ((2u | (1 << 24)) | ((first4 & commas) << 8)) + (consumed << 24);
-	}
+	return u32(entry_data >> 32) | ((effective_bits & commas) << 8);
 
 }
 
@@ -158,47 +113,33 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 
 	r->point_start = slider_ptr;
 
-	// P or L slider
-	//if ((curve_type & 2) == 0) {
-	//
-	//	const auto result = parse_two_slider_points(p, slider_ptr);
-	//
-	//	if (result == 0) [[unlikely]] { // ditch all our work and come back later		
-	//		push_error_slider_body_list(r);
-	//		return nullptr;
-	//	}
-	//
-	//	slider_ptr += u8(result);
-	//	p += (result >> 24);
-	//
-	//}
-	//else
+
 	for (;;) {
 
 		const auto result = parse_two_slider_points(p, slider_ptr);
 
-		if (result == 0) [[unlikely]] { // ditch all our work and come back later		
+		if (result == 0u) [[unlikely]] { // ditch all our work and come back later		
 			push_error_slider_body_list(r);
 			return nullptr;
 		}
 
 		slider_ptr += u8(result);
 		p += (result >> 24);
-
-		if (result & 0x00FFFF00)
+		
+		if (result & 0x00FFFF00) [[likely]] //~81%
 			break;
 
 	}
 
 	r->point_end = slider_ptr;
 
-	if (p[1] == ',') { // X,
+	if (p[1] == ',') [[likely]] { // 99.92%
 
 		r->slides = (p[0] & 0x0f);
 
 		p += 2;
 
-	} else {
+	} else [[unlikely]] {
 
 		u32 slides = (p[0] & 0x0f) * 10 + (p[1] & 0x0f);
 
