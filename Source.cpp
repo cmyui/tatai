@@ -1134,7 +1134,6 @@ u32 run_test_prebatch() {
 
 	printf("starting pre-parse\n");
 
-
 	SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
 
 	u64 bytes{}, objects{}, sliders{}, points{}, timing{};
@@ -1152,7 +1151,6 @@ u32 run_test_prebatch() {
 	}
 
 	printf("maps=%zu bytes=%llu objects=%llu sliders=%llu points=%llu timing=%llu reps=%d\n", FILES.size(), bytes, objects, sliders, points, timing, 50);
-
 
 	u32 COUNT{};
 
@@ -1187,7 +1185,7 @@ u32 run_test_prebatch() {
 				? std::min(MIN_TIME[i], ns)
 				: ns;
 
-			COUNT += MR->header.ELEM_COUNT[0];
+			COUNT += MR->header.ELEM_COUNT[MEM_object_header];
 		}
 	}
 
@@ -1199,7 +1197,7 @@ u32 run_test_prebatch() {
 		TOTAL_NANO += value;
 
 	printf("TOTAL: %f\nMEDIAN: %fns\nAVERAGE:%f\n",
-		double(TOTAL_NANO) / 1000.,
+		double(TOTAL_NANO),
 		double(MIN_TIME[MIN_TIME.size() >> 1]),
 		double(TOTAL_NANO) / double(MIN_TIME.size())
 		);
@@ -1284,6 +1282,7 @@ void run_test_folder() {
 
 			FILE_BUFFER.push_back('\n');
 			FILE_BUFFER.resize(FILE_BUFFER.size() + 128);
+
 			if (COUNT > 2000) {
 				COUNT = 0;
 				break;

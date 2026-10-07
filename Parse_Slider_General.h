@@ -119,6 +119,9 @@ u32 general_parse_slider_points(const char* __restrict p,
 
 	{
 
+		if (values[2].back() == '\r')
+			values[2].remove_suffix(1);
+
 		const char* first = values[2].data();
 		const char* last = first + values[2].size();
 
