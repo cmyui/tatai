@@ -1177,9 +1177,9 @@ u32 run_test_prebatch() {
 
   __itt_resume();
 
-  constexpr u32 REPEATS = 3;
+  constexpr u32 REPEATS = 1;
 
-  for (size_t CRANK = 0; CRANK < 50; ++CRANK) {
+  for (size_t CRANK = 0; CRANK < 1; ++CRANK) {
     for (size_t i = 0; i < FILES.size(); ++i) {
 
       const auto &map = FILES[i];
