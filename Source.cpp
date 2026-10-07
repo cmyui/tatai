@@ -756,7 +756,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 		//TODO figure out minimum slider length i should accept
 
-		byte_allocator::resize(sizeof(_slider_deferral) * max_notes,
+		byte_allocator::resize(sizeof(_slider_deferral) * (max_notes + 9),
 			MEM->get_slider_defer(), MEM->ALLOC_COUNTS[MEM_slider_defer]);
 
 	}
@@ -1015,6 +1015,9 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 						for (; d < slider_defer_table - 1; d += 2) {
 
+							_mm_prefetch((const char*)(d + 8)->p, _MM_HINT_T0);
+							_mm_prefetch((const char*)(d + 9)->p, _MM_HINT_T0);
+
 							parse_double::from_ascii::parse_decimal_16_pair(
 								d->p,
 								(d + 1)->p,
@@ -1030,7 +1033,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 					} else {
 
 						for (; d != slider_defer_table; ++d) {
-
+							_mm_prefetch((const char*)(d + 4)->p, _MM_HINT_T0);
 							// MSVC currently generates worse register use with this forced to no inline.
 							if (d->p != nullptr) [[likely]]
 								d->out->length = parse_double::from_ascii::parse_decimal_16(d->p);
@@ -1085,6 +1088,8 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 #include <filesystem>
 #include <iostream>
+
+#define _DO_VTUNE
 
 #ifdef _DO_VTUNE
 #include "C:\Program Files (x86)\Intel\oneAPI\vtune\latest\include\ittnotify.h"
@@ -1271,9 +1276,9 @@ void run_test_folder() {
 
 int main() {
 
-	//run_test_prebatch();
-	//
-	//return 0;
+	run_test_prebatch();
+	
+	return 0;
 
 	SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
 	//
