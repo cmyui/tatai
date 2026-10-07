@@ -181,10 +181,13 @@
       <AssemblerOutput>AssemblyCode</AssemblerOutput>
       <ControlFlowGuard>false</ControlFlowGuard>
       <CallingConvention>Cdecl</CallingConvention>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <IntelJCCErratum>true</IntelJCCErratum>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -203,7 +206,7 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <AssemblerOutput>AssemblyCode</AssemblerOutput>
-      <AdditionalOptions>/GS- /O2 /clang:-march=native /clang:-fstrict-aliasing /clang:-flto=thin /GR- /Ob3 /clang:-mtune=skylake /clang:-O3 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/GS- /O2 /clang:-march=native /clang:-fstrict-aliasing /clang:-flto=thin /GR- /Ob3 /clang:-mtune=skylake /clang:-O3 /clang:-mbranches-within-32B-boundaries %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
