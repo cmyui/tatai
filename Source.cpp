@@ -1122,8 +1122,9 @@ u32 run_test_prebatch() {
 
   printf("starting preload\n");
 
-  for (const auto &file_entry : std::filesystem::directory_iterator(
-           "C:/Users/cmyui/Desktop/programming/tatai/maps")) {
+  auto beatmaps_dir = "C:/Users/cmyui/Desktop/programming/tatai/maps";
+  for (const auto &file_entry :
+       std::filesystem::directory_iterator(beatmaps_dir)) {
 
     const auto _p{file_entry.path().native()};
 
@@ -1232,8 +1233,8 @@ void run_test_folder() {
     //_Timer A{};
     // for (const auto& file_entry :
     // std::filesystem::directory_iterator("../fast_beatmap_load/map/maps")) {
-    for (const auto &file_entry : std::filesystem::directory_iterator(
-             "C:/Users/Akita/Source/Repos/fast_beatmap_load/map/maps")) {
+    for (const auto &file_entry :
+         std::filesystem::directory_iterator(beatmaps_dir)) {
 
       const auto _p{file_entry.path().native()};
 
