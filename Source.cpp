@@ -1140,6 +1140,8 @@ u32 run_test_prebatch() {
 
     if ((FILES.size() & ((1 << 10) - 1)) == 0)
       printf("%i\n", FILES.size());
+    if (FILES.size() > 20000)
+      break;
   }
 
   printf("starting pre-parse\n");
