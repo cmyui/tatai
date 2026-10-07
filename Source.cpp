@@ -1102,7 +1102,7 @@ void parse_beatmap_from_memory(_memory_region_header *__restrict MEM,
 #include <filesystem>
 #include <iostream>
 
-#define _DO_VTUNE
+// #define _DO_VTUNE
 
 #ifdef _DO_VTUNE
 #include "C:\Program Files (x86)\Intel\oneAPI\vtune\latest\include\ittnotify.h"
