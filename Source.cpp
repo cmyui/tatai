@@ -1111,6 +1111,7 @@ void parse_beatmap_from_memory(_memory_region_header *__restrict MEM,
 #define __itt_pause()
 #define __itt_resume()
 #endif
+constexpr auto beatmaps_dir = "C:/Users/cmyui/Desktop/programming/tatai/maps";
 u32 run_test_prebatch() {
 
   __itt_pause();
@@ -1122,7 +1123,6 @@ u32 run_test_prebatch() {
 
   printf("starting preload\n");
 
-  auto beatmaps_dir = "C:/Users/cmyui/Desktop/programming/tatai/maps";
   for (const auto &file_entry :
        std::filesystem::directory_iterator(beatmaps_dir)) {
 
