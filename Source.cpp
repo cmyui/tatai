@@ -251,7 +251,7 @@ namespace parse_integer_m3 {
 	}
 
 	__forceinline u32 NEG_fixed_likely_3(u32 x, u32 digits) {
-
+		
 		if (digits > 3) [[unlikely]]
 			return 512u;
 
@@ -442,7 +442,7 @@ struct _memory_region_header {
 		return (_error_entry*)((u8*)this + MEMORY_REGION_SIZE * MEM_slider_fallback);
 	}
 
-
+	
 	u32 ALLOC_COUNTS[MEM_REGION_COUNT];
 
 	u32 ELEM_COUNT[MEM_REGION_COUNT];// this isnt always kept up to date, at least for now
@@ -459,7 +459,7 @@ struct _memory_region_header {
 
 	} osu_headers;
 
-	u8 lines_skipped;
+	u8 lines_skipped, stable_would_refuse;
 
 
 	void remove_invalid_lines() {
@@ -727,6 +727,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 	ZeroMemory(MEM->ELEM_COUNT, sizeof(MEM->ELEM_COUNT));
 	MEM->lines_skipped = 0;
+	MEM->stable_would_refuse = 0;
 
 	{
 
@@ -779,8 +780,9 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 		#define DO { const auto bit = _tzcnt_u64(mask); *(line_ptr++) = p + bit; mask = _blsr_u64(mask); }
 
+		for (; (p + 64) <= end; p += 63) {
 
-		for (; p + 64 <= end; p += 63) {
+			_mm_prefetch(p + 512, _MM_HINT_T0);
 
 			const auto v0 = _mm256_loadu_si256((__m256i const*)(p + 0x00));
 			const auto v1 = _mm256_loadu_si256((__m256i const*)(p + 0x20));
@@ -802,11 +804,11 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 			line_ptr[2] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
 			line_ptr[3] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
 
-			if (count > 4) [[unlikely]] {
+			if (count <= 4) [[likely]] {
+				line_ptr += count;
+			} else {
 				line_ptr += 4;
 				while (mask) DO
-			} else {
-				line_ptr += count;
 			}
 
 		}
@@ -965,7 +967,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 					// only pair that wins for now
 					//const auto res = PAIR_parse_object_loop<parse_6_time::parse_object_6digit_pair>(
 					const auto res = parse_object_loop<parse_6_time::parse_object_6digit_single>(
-							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
+						line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
 					slider_defer_table += u32(res >> 32);
 
@@ -1063,9 +1065,10 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 							sd->point_start = nullptr;
 							sd->point_end = nullptr;
 
+							continue;
 						}
 
-						slider_ptr = ((_slider_data*)error_header->object)->point_end;
+						slider_ptr = sd->point_end;
 
 					}
 
@@ -1089,7 +1092,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 #include <filesystem>
 #include <iostream>
 
-#define _DO_VTUNE
+//#define _DO_VTUNE
 
 #ifdef _DO_VTUNE
 #include "C:\Program Files (x86)\Intel\oneAPI\vtune\latest\include\ittnotify.h"
@@ -1124,6 +1127,9 @@ u32 run_test_prebatch() {
 
 		if ((FILES.size() & ((1 << 10) - 1)) == 0) printf("%i\n", FILES.size());
 
+		if (FILES.size() > 20000)
+			break;
+
 	}
 
 	printf("starting pre-parse\n");
@@ -1156,7 +1162,7 @@ u32 run_test_prebatch() {
 
 	constexpr u32 REPEATS = 3;
 
-	for (size_t CRANK = 0; CRANK < 50; ++CRANK) {
+	for (size_t CRANK = 0; CRANK < 10; ++CRANK) {
 		for (size_t i = 0; i < FILES.size(); ++i) {
 
 			const auto& map = FILES[i];
@@ -1201,12 +1207,18 @@ u32 run_test_prebatch() {
 	return COUNT;
 }
 
+#include <random>
+
 void run_test_folder() {
 	
+	std::random_device randomDeviceInit;
+	std::mt19937 mersenneTwister = std::mt19937(randomDeviceInit());
+
 	_memory_region_new* MR{ create_memory_region() };
 
 	u32 XOR_TOTAL{};
 	u32 COUNT{};
+
 	{
 		//_Timer A{};
 		//std::vector<u8> FILE_BUFFER{}; FILE_BUFFER.reserve(u16(-1));
@@ -1216,6 +1228,7 @@ void run_test_folder() {
 
 		//_Timer A{};
 		//for (const auto& file_entry : std::filesystem::directory_iterator("../fast_beatmap_load/map/maps")) {
+		for(;;)
 		for (const auto& file_entry : std::filesystem::directory_iterator("C:/Users/Akita/Source/Repos/fast_beatmap_load/map/maps")) {
 
 			const auto _p{ file_entry.path().native() };
@@ -1228,14 +1241,53 @@ void run_test_folder() {
 			//printf("%s\n", file_name.c_str());			
 			read_file2(file_name.c_str(), FILE_BUFFER);
 
-			FILE_BUFFER.push_back('\n');
-			FILE_BUFFER.resize(FILE_BUFFER.size() + 128);
 
 			++COUNT;
+			if ((COUNT & ((1 << 10) - 1)) == 0) {
+				printf("%i\n", COUNT);
+				//break;
+			}
 
-			if ((COUNT & ((1<<10)-1)) == 0) printf("%i\n", COUNT);
 
-			//if (COUNT > 2000) break;
+
+			if (std::uniform_int_distribution<u32>{0, 10}(mersenneTwister)) {
+			
+				FILE_BUFFER.resize(std::uniform_int_distribution<u32>{0u, (u32)FILE_BUFFER.size()}(mersenneTwister));				
+			
+			}
+			
+			{
+			
+				auto error_count{ std::uniform_int_distribution<u32>{20, 120}(mersenneTwister) };
+			
+				for (size_t i{}; i < error_count; ++i) {
+			
+					auto c = std::uniform_int_distribution<u32>{ 0, 256 }(mersenneTwister);
+			
+					int v = int(FILE_BUFFER.size()) - int(c);
+			
+					if (v < 1)
+						continue;
+			
+					int in = std::uniform_int_distribution<u32>{ u32(0), u32(v) }(mersenneTwister);
+			
+					for (size_t xx{}; xx < c; ++xx) {
+			
+						FILE_BUFFER[in] = std::uniform_int_distribution<u32>{ 0, 255 }(mersenneTwister);
+			
+					}
+			
+				}				
+			
+			}
+
+
+			FILE_BUFFER.push_back('\n');
+			FILE_BUFFER.resize(FILE_BUFFER.size() + 128);
+			if (COUNT > 2000) {
+				COUNT = 0;
+				break;
+			}
 
 			u32 XOR = 0;
 
@@ -1276,12 +1328,12 @@ void run_test_folder() {
 
 int main() {
 
-	run_test_prebatch();
-	
-	return 0;
-
-	SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
+	//run_test_prebatch();
 	//
+	//return 0;
+
+	//SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
+	////
 	//run_test_folder();
 	//return 0;
 

@@ -105,7 +105,9 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 		const auto v = parse_integer_m2::likely_1(load_u32(p));
 
 		p += (v >> 32);
-		// p += 4;
+
+		//p += (p[1] == ',') ? 2 : 3;		
+
 	}
 
 	const auto curve_type = (u8)*p;

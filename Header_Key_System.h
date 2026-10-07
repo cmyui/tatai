@@ -54,7 +54,10 @@ namespace header_key {
 			const u64 key{ load_u64(line_start) };
 
 			if (u8(key) == u8('['))
-				break;
+				break;			
+
+			if (key != str_to_u64("StackLeniency:"))
+				continue;
 
 			if (u32(key >> 8) == str_to_u32("ode:")) {
 
@@ -69,9 +72,6 @@ namespace header_key {
 
 				continue;
 			}
-
-			if (key != str_to_u64("StackLeniency:"))
-				continue;
 
 			line_start += 14;
 
