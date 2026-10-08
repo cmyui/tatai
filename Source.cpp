@@ -9,12 +9,6 @@
 
 #include <chrono>
 
-#if defined(__clang__)
-	constexpr bool is_clang{true};
-#else
-	constexpr bool is_clang{ false };
-#endif
-
 #if defined(__clang__) || defined(__GNUC__)
 #define EXPECT_PROB(cond, p)  __builtin_expect_with_probability(!!(cond), 1, (p))
 #define LIKELY(cond)          __builtin_expect(!!(cond), 1)
@@ -1122,7 +1116,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 #include <filesystem>
 #include <iostream>
 
-//#define _DO_VTUNE
+#define _DO_VTUNE
 
 #ifdef _DO_VTUNE
 #include "C:\Program Files (x86)\Intel\oneAPI\vtune\latest\include\ittnotify.h"
@@ -1352,9 +1346,9 @@ void run_test_folder() {
 
 int main() {
 
-	//run_test_prebatch();
-	//
-	//return 0;
+	run_test_prebatch();
+	
+	return 0;
 	
 	//SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
 	////

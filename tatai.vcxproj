@@ -211,6 +211,9 @@
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <AssemblerOutput>AssemblyCode</AssemblerOutput>
       <AdditionalOptions>/GS- /O2 /clang:-march=native /clang:-fstrict-aliasing /clang:-flto=thin /GR- /Ob3 /clang:-mtune=skylake /clang:-O3 /clang:-mbranches-within-32B-boundaries %(AdditionalOptions)</AdditionalOptions>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <IntelJCCErratum>true</IntelJCCErratum>
+      <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

@@ -56,8 +56,15 @@ namespace header_key {
 			if (u8(key) == u8('['))
 				break;			
 
-			if (key != str_to_u64("StackLeniency:"))
+			if (key == str_to_u64("StackLeniency:")){
+			
+				line_start += 14;
+
+				line_start += u8(*line_start - u8('0')) > 9;
+
+				MEM->osu_headers.table[header_id::StackLeniency] = parse_double::from_ascii::parse_decimal_16((const char*)line_start);
 				continue;
+			}
 
 			if (u32(key >> 8) == str_to_u32("ode:")) {
 
@@ -71,13 +78,7 @@ namespace header_key {
 				MEM->osu_headers.Mode = digit;
 
 				continue;
-			}
-
-			line_start += 14;
-
-			line_start += u8(*line_start - u8('0')) > 9;
-
-			MEM->osu_headers.table[header_id::StackLeniency] = parse_double::from_ascii::parse_decimal_16((const char*)line_start);
+			}			
 
 		}
 
