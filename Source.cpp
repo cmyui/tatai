@@ -15,6 +15,29 @@
 	constexpr bool is_clang{ false };
 #endif
 
+#if defined(__clang__) || defined(__GNUC__)
+#define EXPECT_PROB(cond, p)  __builtin_expect_with_probability(!!(cond), 1, (p))
+#define LIKELY(cond)          __builtin_expect(!!(cond), 1)
+#define UNLIKELY(cond)        __builtin_expect(!!(cond), 0)
+#define LIKELY_ARM
+#define UNLIKELY_ARM
+#else
+#define EXPECT_PROB(cond, p)  (cond)
+#define LIKELY(cond)          (cond)
+#define UNLIKELY(cond)        (cond)
+#define LIKELY_ARM            [[likely]]
+#define UNLIKELY_ARM          [[unlikely]]
+#endif
+
+#if defined(__clang__)
+#define UNPREDICTABLE(cond)   __builtin_unpredictable(!!(cond))
+#elif defined(__GNUC__)
+#define UNPREDICTABLE(cond)   __builtin_expect_with_probability(!!(cond), 1, 0.5)
+#else
+#define UNPREDICTABLE(cond)   (cond)
+#endif
+
+
 
 struct _Timer {
 
@@ -1005,6 +1028,8 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 					for (; d != slider_defer_table; ++d) {
 
+						_mm_prefetch((const char*)(d + 8)->p, _MM_HINT_T0);
+
 						d->p = parse_slider_path(d->p, slider_ptr, d->out);
 						slider_ptr = d->out->point_end;
 
@@ -1035,7 +1060,9 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 					} else {
 
 						for (; d != slider_defer_table; ++d) {
+
 							_mm_prefetch((const char*)(d + 4)->p, _MM_HINT_T0);
+
 							// MSVC currently generates worse register use with this forced to no inline.
 							if (d->p != nullptr) [[likely]]
 								d->out->length = parse_double::from_ascii::parse_decimal_16(d->p);

@@ -98,33 +98,36 @@ __forceinline u32 parse_two_slider_points(const char* __restrict p, _slider_poin
 
 #include "Parse_Double.h"
 
-__forceinline const char *parse_slider_path(const char *__restrict p, _slider_point*__restrict slider_ptr, _slider_data *const __restrict r) {
+__forceinline
+//__declspec(noinline)
+const char *parse_slider_path(const char *__restrict p, _slider_point*__restrict slider_ptr, _slider_data *const __restrict r) {
 
 	{ // hitsound
 
-		const auto v = parse_integer_m2::likely_1(load_u32(p));
+		if (EXPECT_PROB(p[1] == ',', 0.9992)) LIKELY_ARM {
 
-		p += (v >> 32);
+			r->curve_type = p[2];
+			p += 4;
 
-		//p += (p[1] == ',') ? 2 : 3;		
+		} else {
+
+			r->curve_type = p[3];
+			p += 5;
+
+		}
 
 	}
-
-	const auto curve_type = (u8)*p;
-	r->curve_type = curve_type;
-
-	p += 2;
 
 	r->point_end = (_slider_point*)size_t(p); // should be safe, we write over this again in all cases except the error
 
 	r->point_start = slider_ptr;
 
-
 	for (;;) {
 
 		const auto result = parse_two_slider_points(p, slider_ptr);
 
-		if (result == 0u) [[unlikely]] { // ditch all our work and come back later		
+		if (EXPECT_PROB(result == 0u, 0.0002)) UNLIKELY_ARM {
+			// ditch all our work and come back later
 			push_error_slider_body_list(r);
 			return nullptr;
 		}
@@ -132,14 +135,15 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 		slider_ptr += u8(result);
 		p += (result >> 24);
 		
-		if (result & 0x00FFFF00) [[likely]] //~81%
+
+		if (EXPECT_PROB(result & 0x00FFFF00, 0.81)) LIKELY_ARM
 			break;
 
 	}
 
 	r->point_end = slider_ptr;
 
-	if (p[1] == ',') [[likely]] { // 99.92%
+	if (EXPECT_PROB(p[1] == ',', 0.9992)) LIKELY_ARM {
 
 		r->slides = (p[0] & 0x0f);
 
@@ -167,8 +171,6 @@ __forceinline const char *parse_slider_path(const char *__restrict p, _slider_po
 		++p;
 
 	}
-
-	//r->length = parse_double::from_ascii::parse_decimal_16(p);
 
 	return p;
 }

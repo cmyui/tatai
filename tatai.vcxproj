@@ -184,6 +184,9 @@
       <CallingConvention>Cdecl</CallingConvention>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <IntelJCCErratum>true</IntelJCCErratum>
+      <OmitFramePointers>false</OmitFramePointers>
+      <StringPooling>true</StringPooling>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
