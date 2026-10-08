@@ -638,24 +638,28 @@ __declspec(noinline) u64 parse_object_loop(
 	const auto* start = pos;
 	const auto* start_defer = defer;
 
-	for (;;) {
+	for (;;) {		
 
 		const char* p = *pos;
 
-		if (p == nullptr)
+		if (p == nullptr) [[unlikely]]
 			break;
 
 		const auto con = parse_func(p, object);
 
-		if (con == 0)
+		if (con == 0) [[unlikely]]
 			break;
+
+		_mm_prefetch(*(pos + 8), _MM_HINT_T0);
 
 		*defer = { p + con, object_data };
 		defer = (_slider_deferral*)((u8*)defer + ((object->type & 2u) << 3));
 
+
 		++pos;
 		++object;
 		++object_data;
+
 	}
 
 	return (pos - start) | (u64(defer - start_defer) << 32);
@@ -757,7 +761,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 		const auto file_size{ (end - p) };
 
 		//64mb is the max size accepted - fail on any file above that size
-		if (byte_allocator::resize(sizeof(char*) * (file_size + 4),
+		if (byte_allocator::resize((sizeof(char*) * (file_size + 8)),
 			MEM->get_lines(), MEM->ALLOC_COUNTS[MEM_lines]) == nullptr)
 			return;
 
@@ -951,8 +955,8 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 				}
 
 				{
-				parse4: //if (*line_ptr == nullptr) goto parse_finished;
 
+				parse4: //if (*line_ptr == nullptr) goto parse_finished;
 					{
 						
 						const auto res = parse_object_loop<parse_4_time::parse_object_4digit_single>(line_ptr, object_ptr, object_data_ptr, slider_defer_table);
@@ -968,7 +972,6 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 					}
 
 				parse5: //if (*line_ptr == nullptr) goto parse_finished;
-
 					{
 
 						//const auto res = PAIR_parse_object_loop<parse_5_time::parse_object_5digit_pair>(
@@ -986,37 +989,37 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 					}
 
 				parse6: if (line_ptr == line_ptr_end) goto parse_finished;
-				{
-					// only pair that wins for now
-					//const auto res = PAIR_parse_object_loop<parse_6_time::parse_object_6digit_pair>(
-					const auto res = parse_object_loop<parse_6_time::parse_object_6digit_single>(
-						line_ptr, object_ptr, object_data_ptr, slider_defer_table);
+					{
+						// only pair that wins for now
+						//const auto res = PAIR_parse_object_loop<parse_6_time::parse_object_6digit_pair>(
+						const auto res = parse_object_loop<parse_6_time::parse_object_6digit_single>(
+							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
-					slider_defer_table += u32(res >> 32);
+						slider_defer_table += u32(res >> 32);
 
-					const auto count = u32(res);
+						const auto count = u32(res);
 
-					line_ptr += count;
-					object_ptr += count;
-					object_data_ptr += count;
+						line_ptr += count;
+						object_ptr += count;
+						object_data_ptr += count;
 
-				}
+					}
 
 				parse7: if (line_ptr == line_ptr_end) goto parse_finished;
-				{
-					//const auto res = PAIR_parse_object_loop<parse_7_time::parse_object_7digit_SIMD_pair>(
-					const auto res = parse_object_loop<parse_7_time::parse_object_7digit_single>(
-						line_ptr, object_ptr, object_data_ptr, slider_defer_table);
+					{
+						//const auto res = PAIR_parse_object_loop<parse_7_time::parse_object_7digit_SIMD_pair>(
+						const auto res = parse_object_loop<parse_7_time::parse_object_7digit_single>(
+							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
-					slider_defer_table += u32(res >> 32);
+						slider_defer_table += u32(res >> 32);
 
-					const auto count = u32(res);
+						const auto count = u32(res);
 
-					line_ptr += count;
-					object_ptr += count;
-					object_data_ptr += count;
+						line_ptr += count;
+						object_ptr += count;
+						object_data_ptr += count;
 
-				}
+					}
 
 			}
 
@@ -1253,7 +1256,7 @@ void run_test_folder() {
 
 		//_Timer A{};
 		//for (const auto& file_entry : std::filesystem::directory_iterator("../fast_beatmap_load/map/maps")) {
-		for(;;)
+		//for(;;)
 		for (const auto& file_entry : std::filesystem::directory_iterator("C:/Users/Akita/Source/Repos/fast_beatmap_load/map/maps")) {
 
 			const auto _p{ file_entry.path().native() };
@@ -1275,45 +1278,40 @@ void run_test_folder() {
 
 
 
-			if (std::uniform_int_distribution<u32>{0, 10}(mersenneTwister)) {
-			
-				FILE_BUFFER.resize(std::uniform_int_distribution<u32>{0u, (u32)FILE_BUFFER.size()}(mersenneTwister));				
-			
-			}
-			
-			{
-			
-				auto error_count{ std::uniform_int_distribution<u32>{20, 120}(mersenneTwister) };
-			
-				for (size_t i{}; i < error_count; ++i) {
-			
-					auto c = std::uniform_int_distribution<u32>{ 0, 256 }(mersenneTwister);
-			
-					int v = int(FILE_BUFFER.size()) - int(c);
-			
-					if (v < 1)
-						continue;
-			
-					int in = std::uniform_int_distribution<u32>{ u32(0), u32(v) }(mersenneTwister);
-			
-					for (size_t xx{}; xx < c; ++xx) {
-			
-						FILE_BUFFER[in] = std::uniform_int_distribution<u32>{ 0, 255 }(mersenneTwister);
-			
-					}
-			
-				}				
-			
-			}
+			//if (std::uniform_int_distribution<u32>{0, 10}(mersenneTwister)) {
+			//
+			//	FILE_BUFFER.resize(std::uniform_int_distribution<u32>{0u, (u32)FILE_BUFFER.size()}(mersenneTwister));				
+			//
+			//}
+			//
+			//{
+			//
+			//	auto error_count{ std::uniform_int_distribution<u32>{20, 120}(mersenneTwister) };
+			//
+			//	for (size_t i{}; i < error_count; ++i) {
+			//
+			//		auto c = std::uniform_int_distribution<u32>{ 0, 256 }(mersenneTwister);
+			//
+			//		int v = int(FILE_BUFFER.size()) - int(c);
+			//
+			//		if (v < 1)
+			//			continue;
+			//
+			//		int in = std::uniform_int_distribution<u32>{ u32(0), u32(v) }(mersenneTwister);
+			//
+			//		for (size_t xx{}; xx < c; ++xx) {
+			//
+			//			FILE_BUFFER[in] = std::uniform_int_distribution<u32>{ 0, 255 }(mersenneTwister);
+			//
+			//		}
+			//
+			//	}				
+			//
+			//}
 
 
 			FILE_BUFFER.push_back('\n');
 			FILE_BUFFER.resize(FILE_BUFFER.size() + 128);
-
-			if (COUNT > 2000) {
-				COUNT = 0;
-				break;
-			}
 
 			u32 XOR = 0;
 
@@ -1357,7 +1355,7 @@ int main() {
 	//run_test_prebatch();
 	//
 	//return 0;
-
+	
 	//SetThreadAffinityMask(GetCurrentThread(), 1ull << 2);
 	////
 	//run_test_folder();

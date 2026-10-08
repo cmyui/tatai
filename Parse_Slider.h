@@ -74,8 +74,7 @@ __forceinline u32 parse_two_slider_points(const char* __restrict p, _slider_poin
         return (1u | (1 << 24) | ((end & commas) << 8u)) + (consumed << 24u);
 	}
 
-    const u32 effective_bits = first4 & _blsmsk_u32(commas); // is 26% 0x0088 and 38% 0x8888    
-
+    const u32 effective_bits = first4 & _blsmsk_u32(commas); // is 26% 0x0088 and 38% 0x8888
 
     const u32 key = ((effective_bits * 480925u) >> 10u) & 0x1fe0u;
 
@@ -83,9 +82,9 @@ __forceinline u32 parse_two_slider_points(const char* __restrict p, _slider_poin
 
     const u64 entry_data = load_u64(entry);
 
-	const u32 comma_flags = (commas & effective_bits);
+	const u32 comma_flags = (commas & effective_bits);	
 
-	if (u32(entry_data) == effective_bits) [[likely]] {
+	if (EXPECT_PROB(u32(entry_data) == effective_bits, 0.9999)) LIKELY_ARM {
 
 		parse_slider_pair_GENERAL(digits, _mm_load_si128((const __m128i*)(entry + 16)), out);
 
@@ -102,9 +101,9 @@ __forceinline
 //__declspec(noinline)
 const char *parse_slider_path(const char *__restrict p, _slider_point*__restrict slider_ptr, _slider_data *const __restrict r) {
 
-	{ // hitsound
+	{ // hitsound	
 
-		if (EXPECT_PROB(p[1] == ',', 0.9992)) LIKELY_ARM {
+		if (EXPECT_PROB(p[1] == ',', 0.9994)) LIKELY_ARM {
 
 			r->curve_type = p[2];
 			p += 4;
@@ -124,9 +123,9 @@ const char *parse_slider_path(const char *__restrict p, _slider_point*__restrict
 
 	for (;;) {
 
-		const auto result = parse_two_slider_points(p, slider_ptr);
+		const auto result = parse_two_slider_points(p, slider_ptr);		
 
-		if (EXPECT_PROB(result == 0u, 0.0002)) UNLIKELY_ARM {
+		if (EXPECT_PROB(result == 0u, 0.00002)) UNLIKELY_ARM {
 			// ditch all our work and come back later
 			push_error_slider_body_list(r);
 			return nullptr;
