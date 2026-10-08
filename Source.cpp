@@ -621,16 +621,15 @@ __declspec(noinline) void push_error_slider_body_list(_slider_data* const object
 
 #include <cstdlib>
 
-template <auto parse_func>
-__declspec(noinline) u64 parse_object_loop(
-	const char* const* __restrict pos,
-	_object_header* __restrict object,
-	_slider_data* __restrict object_data,
-	_slider_deferral* __restrict defer
-) {
+#include "Object_Pair.h"
 
-	const auto* start = pos;
-	const auto* start_defer = defer;
+template <auto parse_func>
+__forceinline void parse_object_loop(
+	const char**& pos,
+	_object_header*& object,
+	_slider_data*& object_data,
+	_slider_deferral*& defer
+) {
 
 	for (;;) {		
 
@@ -638,6 +637,23 @@ __declspec(noinline) u64 parse_object_loop(
 
 		if (p == nullptr) [[unlikely]]
 			break;
+
+		if constexpr (parse_func == parse_5_time::parse_object_5digit_single ||
+			parse_func == parse_6_time::parse_object_6digit_single) {
+			if (const char* p1 = pos[1]) {
+				constexpr u32 width = parse_func == parse_5_time::parse_object_5digit_single ? 5 : 6;
+				if (object_pair::parse<width>(p, p1, object)) {
+					*defer = {p, object_data};
+					defer += (u8(p[-2]) & 2u) >> 1;
+					*defer = {p1, object_data + 1};
+					defer += (u8(p1[-2]) & 2u) >> 1;
+					pos += 2;
+					object += 2;
+					object_data += 2;
+					continue;
+				}
+			}
+		}
 
 		const auto con = parse_func(p, object);
 
@@ -656,7 +672,6 @@ __declspec(noinline) u64 parse_object_loop(
 
 	}
 
-	return (pos - start) | (u64(defer - start_defer) << 32);
 }
 
 template <auto parse_func>
@@ -803,7 +818,7 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 
 		for (; (p + 64) <= end; p += 63) {
 
-			_mm_prefetch(p + 512, _MM_HINT_T0);
+			_mm_prefetch(p + 1024, _MM_HINT_T0);
 
 			const auto v0 = _mm256_loadu_si256((__m256i const*)(p + 0x00));
 			const auto v1 = _mm256_loadu_si256((__m256i const*)(p + 0x20));
@@ -823,12 +838,11 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 			line_ptr[0] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
 			line_ptr[1] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
 			line_ptr[2] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
-			line_ptr[3] = p + _tzcnt_u64(mask); mask = _blsr_u64(mask);
 
-			if (count <= 4) [[likely]] {
+			if (count <= 3) [[likely]] {
 				line_ptr += count;
 			} else {
-				line_ptr += 4;
+				line_ptr += 3;
 				while (mask) DO
 			}
 
@@ -953,65 +967,30 @@ void parse_beatmap_from_memory(_memory_region_header* __restrict MEM, char const
 				parse4: //if (*line_ptr == nullptr) goto parse_finished;
 					{
 						
-						const auto res = parse_object_loop<parse_4_time::parse_object_4digit_single>(line_ptr, object_ptr, object_data_ptr, slider_defer_table);
-
-						slider_defer_table += u32(res >> 32);
-
-						const auto count = u32(res);
-
-						line_ptr += count;
-						object_ptr += count;
-						object_data_ptr += count;
+						parse_object_loop<parse_4_time::parse_object_4digit_single>(line_ptr, object_ptr, object_data_ptr, slider_defer_table);
 
 					}
 
 				parse5: //if (*line_ptr == nullptr) goto parse_finished;
 					{
 
-						//const auto res = PAIR_parse_object_loop<parse_5_time::parse_object_5digit_pair>(
-						const auto res = parse_object_loop<parse_5_time::parse_object_5digit_single>(
+						parse_object_loop<parse_5_time::parse_object_5digit_single>(
 							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
-
-						slider_defer_table += u32(res >> 32);
-
-						const auto count = u32(res);
-
-						line_ptr += count;
-						object_ptr += count;
-						object_data_ptr += count;
 
 					}
 
 				parse6: if (line_ptr == line_ptr_end) goto parse_finished;
 					{
-						// only pair that wins for now
-						//const auto res = PAIR_parse_object_loop<parse_6_time::parse_object_6digit_pair>(
-						const auto res = parse_object_loop<parse_6_time::parse_object_6digit_single>(
+						parse_object_loop<parse_6_time::parse_object_6digit_single>(
 							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
-
-						slider_defer_table += u32(res >> 32);
-
-						const auto count = u32(res);
-
-						line_ptr += count;
-						object_ptr += count;
-						object_data_ptr += count;
 
 					}
 
 				parse7: if (line_ptr == line_ptr_end) goto parse_finished;
 					{
 						//const auto res = PAIR_parse_object_loop<parse_7_time::parse_object_7digit_SIMD_pair>(
-						const auto res = parse_object_loop<parse_7_time::parse_object_7digit_single>(
+						parse_object_loop<parse_7_time::parse_object_7digit_single>(
 							line_ptr, object_ptr, object_data_ptr, slider_defer_table);
-
-						slider_defer_table += u32(res >> 32);
-
-						const auto count = u32(res);
-
-						line_ptr += count;
-						object_ptr += count;
-						object_data_ptr += count;
 
 					}
 
