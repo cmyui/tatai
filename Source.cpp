@@ -621,7 +621,7 @@ __declspec(noinline) void push_error_slider_body_list(_slider_data* const object
 
 #include <cstdlib>
 
-#include "Object_Pair.h"
+#include "Parse_Object_Pair.h"
 
 template <auto parse_func>
 __forceinline void parse_object_loop(
@@ -640,16 +640,22 @@ __forceinline void parse_object_loop(
 
 		if constexpr (parse_func == parse_5_time::parse_object_5digit_single ||
 			parse_func == parse_6_time::parse_object_6digit_single) {
+
 			if (const char* p1 = pos[1]) {
+
 				constexpr u32 width = parse_func == parse_5_time::parse_object_5digit_single ? 5 : 6;
+
 				if (object_pair::parse<width>(p, p1, object)) {
-					*defer = {p, object_data};
+
+					*defer = { p, object_data };
 					defer += (u8(p[-2]) & 2u) >> 1;
-					*defer = {p1, object_data + 1};
+					*defer = { p1, object_data + 1 };
 					defer += (u8(p1[-2]) & 2u) >> 1;
+
 					pos += 2;
 					object += 2;
 					object_data += 2;
+
 					continue;
 				}
 			}
